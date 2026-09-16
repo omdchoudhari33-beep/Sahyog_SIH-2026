@@ -1,0 +1,16 @@
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    container_name: agent-d-postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: dno_triage
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dno_triage"]
+      interval: 5s
+      timeout: 5s
+      retries: 12

@@ -1,0 +1,31 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Generated local data
+tmp_audio/
+local_audio/
+temp_uploads/
+closure_uploads/
+pilot_uploads/
+logs/
+
+# Vendored whisper.cpp - no longer used (ASR moved to Bhashini), kept on
+# disk for reference only, not tracked (35MB of third-party C++ source).
+*/tools/whisper.cpp/
+
+# Reference-only staging copy the updates were reviewed from - already
+# merged into the real service folders, not the source of truth.
+UPDATED AGENTS/
+
+# IDE state and downloaded model binaries
+.vs/
+*.bin

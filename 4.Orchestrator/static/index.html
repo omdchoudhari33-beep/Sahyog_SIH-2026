@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SAHYOG - Report a Problem</title>
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>SAHYOG - सहयोग</h1>
+      <div class="tag" id="progress-tag">Step 1 of 5 - Tell us the problem</div>
+    </div>
+    <nav><a href="/dashboard">Operator dashboard →</a></nav>
+  </header>
+
+  <div id="error" class="error-box"></div>
+
+  <div id="chat-log" class="card" style="display:none;"></div>
+
+  <!-- Step 1: Describe -->
+  <section id="step-describe" class="card step">
+    <div class="field">
+      <label for="language">Language</label>
+      <select id="language" name="source_language">
+        <option value="en">English</option>
+        <option value="hi" selected>Hindi / हिंदी</option>
+        <option value="bn">Bengali / বাংলা</option>
+        <option value="or">Odia / ଓଡ଼ିଆ</option>
+        <option value="ur">Urdu / اردو</option>
+        <option value="ne">Nepali</option>
+        <option value="mai">Maithili</option>
+        <option value="sat">Santali</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="text">Describe the problem (or record your voice below)</label>
+      <textarea id="text" rows="4" placeholder="e.g. Sadak mein bada gaddha hai, school ke paas..."></textarea>
+    </div>
+
+    <div class="field">
+      <label>Or record a voice note</label>
+      <button type="button" id="mic-btn" class="mic">🎙️ Start recording</button>
+      <div id="recording-status" class="geo-status"></div>
+      <audio id="audio-preview" class="recorded" controls></audio>
+    </div>
+
+    <button type="button" id="describe-btn" class="primary">Submit</button>
+  </section>
+
+  <!-- Step 2: Confirm -->
+  <section id="step-confirm" class="card step" hidden>
+    <p><strong>Here's what I understood:</strong></p>
+    <dl class="evidence">
+      <div><dt>Problem</dt><dd id="confirm-statement"></dd></div>
+      <div><dt>Domain</dt><dd id="confirm-domain"></dd></div>
+      <div><dt>Severity</dt><dd id="confirm-severity"></dd></div>
+    </dl>
+    <div id="confirm-warning" class="error-box" style="display:none;"></div>
+    <div class="row" style="margin-top:14px;">
+      <button type="button" id="confirm-yes-btn" class="primary">Yes, that's correct</button>
+      <button type="button" id="confirm-no-btn">No, let me correct it</button>
+    </div>
+    <div id="correction-box" class="field" style="display:none; margin-top:14px;">
+      <label for="correction-text">Edit the description</label>
+      <textarea id="correction-text" rows="3"></textarea>
+      <button type="button" id="correction-submit-btn" class="primary" style="margin-top:10px;">Update</button>
+    </div>
+  </section>
+
+  <!-- Step 3: Photo -->
+  <section id="step-photo" class="card step" hidden>
+    <div class="field">
+      <label for="image">Photo of the spot</label>
+      <input type="file" id="image" accept="image/*" capture="environment" />
+      <img id="image-preview" class="thumb" alt="Selected photo preview" />
+    </div>
+    <div id="photo-warning" class="error-box" style="display:none;"></div>
+    <button type="button" id="photo-btn" class="primary">Upload photo</button>
+    <button type="button" id="photo-force-btn" style="display:none; margin-top:8px;">This is correct, continue anyway</button>
+  </section>
+
+  <!-- Step 4: Location (only if needed) -->
+  <section id="step-location" class="card step" hidden>
+    <p>The photo has no location info. Please share your current location.</p>
+    <button type="button" id="geo-btn" class="primary">📍 Share my location</button>
+    <div id="geo-status" class="geo-status"></div>
+
+    <div class="field" style="margin-top:18px;">
+      <label for="address-text">Or type a place name (if location sharing isn't available)</label>
+      <input type="text" id="address-text" placeholder="e.g. Ranchi Market, Jharkhand" />
+      <button type="button" id="address-btn" style="margin-top:8px;">Use this place</button>
+    </div>
+  </section>
+
+  <!-- Step 5: Ready to submit -->
+  <section id="step-ready" class="card step" hidden>
+    <p><strong>Ready to submit your report:</strong></p>
+    <dl class="evidence" id="ready-summary"></dl>
+    <button type="button" id="finalize-btn" class="primary" style="margin-top:14px;">Submit report</button>
+  </section>
+
+  <!-- Completed -->
+  <section id="step-completed" class="card step" hidden>
+    <span class="badge routed">Submitted</span>
+    <p id="completed-message"></p>
+    <button type="button" id="restart-btn" style="margin-top:10px;">Report another problem</button>
+  </section>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

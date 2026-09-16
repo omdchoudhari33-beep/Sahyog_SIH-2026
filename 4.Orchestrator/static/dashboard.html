@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SAHYOG - Operator Dashboard</title>
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<div class="wrap" style="max-width: 960px;">
+  <header class="top">
+    <div>
+      <h1>DNO Validation Queue</h1>
+      <div class="tag">Active tickets, ordered by G1 priority score</div>
+    </div>
+    <nav><a href="/">← Citizen report form</a></nav>
+  </header>
+
+  <div id="error" class="error-box"></div>
+
+  <div class="card">
+    <div class="toolbar">
+      <div class="field" style="margin: 0; flex: 1; min-width: 180px;">
+        <label for="operator-id">Operator ID</label>
+        <input type="text" id="operator-id" placeholder="e.g. operator-1" />
+      </div>
+      <button id="refresh-btn">↻ Refresh</button>
+    </div>
+
+    <div id="table-wrap" style="overflow-x: auto;">
+      <table class="tickets">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Problem</th>
+            <th>Domain</th>
+            <th>Severity</th>
+            <th>Priority</th>
+            <th>Reports</th>
+            <th>Suggested track</th>
+            <th>Decision</th>
+          </tr>
+        </thead>
+        <tbody id="tickets-body"></tbody>
+      </table>
+      <div id="empty" class="empty" style="display:none;">No active tickets right now.</div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/dashboard.js"></script>
+</body>
+</html>
