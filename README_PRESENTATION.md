@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-SAHYOG is a multilingual, AI-assisted civic grievance platform. Citizens can submit a complaint using text, voice, a photograph, and a location. The platform normalizes the report, extracts evidence, detects duplicates, calculates priority, routes the case to a municipal department or research institution, and exposes progress to operators and citizens.
+SAHYOG is a multilingual, AI-assisted civic grievance platform. Citizens can submit a complaint using text, voice, a photograph, and a location. The platform normalizes the report, extracts evidence, detects duplicates, calculates priority, routes the case to a municipal department or research institution, and exposes progress to operators and citizens. Citizens can also ask "Ask Sahyog" free-text questions about how the process works or whether a similar issue is already tracked, answered by a retrieval-augmented local LLM grounded in a real knowledge base and live ticket data.
 
 The core principle is **AI assisting, humans deciding**. Artificial intelligence suggests classification and routing, but a human operator validates the final decision.
 
@@ -149,6 +149,7 @@ POST /g1/recalculate
 GET  /dno/tickets
 GET  /dno/tickets/{ticket_id}
 POST /dno/tickets/{ticket_id}/decision
+POST /rag/ask
 ```
 
 Priority formula:
@@ -159,6 +160,26 @@ priority = severity * weight
          + age_in_hours * weight
          + population_impact * weight
 ```
+
+## Ask Sahyog: RAG Q&A
+
+Agent 3 also answers free-text citizen questions through a retrieval-
+augmented generation pipeline, reusing its own pgvector setup:
+
+- Authored how-it-works/FAQ documents (`knowledge_base/*.md`) are chunked
+  and embedded into a `kb_chunks` table.
+- A question is embedded and matched by cosine similarity against both
+  `kb_chunks` and live `active_tickets`, so an answer can also say whether
+  a similar issue is already tracked and its status.
+- `llama3.2:3b` (the same model Agent 2 already runs) generates the answer,
+  instructed to use only the retrieved context and say so explicitly when
+  the context doesn't cover the question - it never invents policy, SLA
+  numbers, or ticket details.
+
+The Orchestrator exposes this as `POST /ask`, normalizing non-English
+questions through Agent 1 first; the citizen portal's `/ask` page renders
+the answer with its sources and can speak it back via the existing voice
+bot.
 
 ## Orchestrator and Citizen Workflow
 
@@ -343,7 +364,7 @@ llama3.2:3b
 llava
 ```
 
-Apply database migrations in dependency order, beginning with Agent 3 and ending with the Transparency Layer. Then start the entire system:
+Apply database migrations in dependency order, beginning with Agent 3 and ending with the Transparency Layer (Agent 3 also needs `schema_004_kb_chunks.sql` and, once, `python -m app.rag_ingest` to populate the Ask Sahyog knowledge base). Then start the entire system:
 
 ```powershell
 python start_pipeline.py
@@ -442,6 +463,7 @@ SAHYOG turns multimodal citizen reports into validated, prioritized, traceable c
 - Lifecycle outcome tracking
 - Citizen status visibility
 - Government transparency analytics
+- Retrieval-augmented citizen Q&A grounded in real documentation and live ticket data
 
 ### Final Project Statement
 

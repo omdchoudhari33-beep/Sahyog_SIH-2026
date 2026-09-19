@@ -1,11 +1,14 @@
 # SAHYOG Pipeline
 
-Four services, one pipeline: a citizen speaks or types a report, uploads a
-photo, and gets a real spoken back-and-forth confirming what the system
-understood - before a ticket is ever raised. See
-`4.Orchestrator/README.md` for the full conversational flow diagram,
-voice-agent details (what's real speech-to-speech vs. text), and API
-reference.
+A citizen speaks or types a report, uploads a photo, and gets a real spoken
+back-and-forth confirming what the system understood - before a ticket is
+ever raised. From there, nine backend services (see
+`README_PRESENTATION.md` for the full architecture) deduplicate, prioritize,
+route, and track it through to a resolved outcome, and citizens can ask
+"Ask Sahyog" (see below) how any of that works or whether their issue is
+already being tracked. See `4.Orchestrator/README.md` for the full
+conversational flow diagram, voice-agent details (what's real
+speech-to-speech vs. text), and API reference.
 
 **Voice coverage, stated plainly** (individually verified per language via
 Bhashini's own model-discovery endpoint, not assumed from one shared model
@@ -110,6 +113,36 @@ has its own nav and talks to a different slice of the backend - see
 Operator and Institution currently share one login credential
 (`ADMIN_PORTAL_PASSWORD`, checked via the Orchestrator's HTTPBasic gate) -
 there's no separate per-institution login exposed as a browser API yet.
+
+## Ask Sahyog (RAG Q&A)
+
+Citizens can ask a free-text question - how reporting/tracking/routing
+works, or whether an issue like theirs is already being tracked - and get
+an answer grounded in a real knowledge base plus live ticket data, not a
+free-form LLM guess.
+
+- **Retrieval + generation** lives in `3.Triage and route`: authored
+  how-it-works docs in `knowledge_base/*.md` are chunked and embedded into
+  a `kb_chunks` pgvector table (same embedding model/index style as the
+  dedup engine), and every question is matched against both that table and
+  live `active_tickets` before being answered by a local Ollama model
+  (`llama3.2:3b`, the same model Agent 2 already uses) - the model is
+  instructed to answer only from that retrieved context and say so
+  explicitly when it doesn't cover the question.
+- **One-time setup**, after the usual per-service venv/deps step:
+  ```powershell
+  cd "3.Triage and route"
+  psql "$env:DATABASE_URL" -f schema_004_kb_chunks.sql
+  .venv\Scripts\python.exe -m app.rag_ingest
+  ```
+  Re-run `rag_ingest` any time a `knowledge_base/*.md` file changes - it's
+  idempotent per file.
+- **Endpoints**: `POST /rag/ask` on Agent 3, proxied through the
+  Orchestrator's `POST /ask` (which also normalizes non-English questions
+  via Agent 1 first).
+- **Frontend**: the citizen portal's `/ask` page - ask a question, see the
+  grounded answer and its sources, and optionally hear it spoken back via
+  the existing voice bot.
 
 ## Watching logs live
 
