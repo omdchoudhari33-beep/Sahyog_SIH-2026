@@ -61,8 +61,8 @@ by service name, timestamped - into one file: `logs/sahyog.log`. Press
 Ctrl+C to stop everything cleanly.
 
 Then open:
-- `citizen-portal` (separate Next.js app - see its own README) - the
-  citizen report wizard (voice or text, photo, location, with every step
+- `citizen-portal` (separate Next.js app - see "Frontend portals" below) -
+  the citizen report wizard (voice or text, photo, location, with every step
   confirmed back before submission)
 - `http://127.0.0.1:8005/dashboard` - operator queue
 
@@ -73,6 +73,43 @@ whichever one it names.
 On a corporate network with a TLS-inspecting proxy (e.g. Zscaler), see
 `4.Orchestrator/README.md` section 0 if you hit `CERTIFICATE_VERIFY_FAILED`
 errors during setup or at runtime.
+
+## Frontend portals (`citizen-portal`)
+
+`citizen-portal` is a single Next.js app that serves four separate portals,
+switched by URL prefix (see `components/Header.js`'s `portalFor()`). Each
+has its own nav and talks to a different slice of the backend - see
+`lib/api.js` for the exact calls.
+
+- **Citizen portal** - `/`, `/submit`, `/track`, `/track/[ticketId]`,
+  `/transparency`, `/about`. Public, no login. The report wizard (describe
+  → confirm → photo → location → review → done), the public ticket feed
+  and map, and per-ticket status lookup. Talks to Agent 1 (audio upload),
+  the Orchestrator's `/conversation/*` session API, and Agent 3/9's public
+  read endpoints.
+
+- **Operator portal** - `/operator/login`, `/operator/queue`,
+  `/operator/queue/[ticketId]`. Requires staff sign-in. The DNO triage
+  queue: filter incoming tickets, review priority/duplicate clustering, and
+  record the human decision (`track_a`, `track_b`, or `reject_merge`). Goes
+  through the Orchestrator's `/api/tickets*` proxy.
+
+- **Institution portal** - `/institution/login`, `/institution`,
+  `/institution/matches`, `/institution/projects`, `/institution/partners`.
+  Requires staff sign-in. The HEI-side view of Track B: accept/decline a
+  matched case, form a student team, submit a proposal, record pilot
+  disposition (handover/spin-out), and release industry funds. Goes through
+  the Orchestrator's `/api/admin/track-b/*`, `/api/admin/lifecycle/*`, and
+  `/api/admin/industry/*` proxies.
+
+- **Government portal** - `/government`, `/government/audit`. Public, no
+  login. Read-only statewide analytics (district/domain aggregates, charts,
+  map) and the audit log viewer, sourced from Agent 9's public
+  `/transparency/dashboard.json` and `/audit` endpoints.
+
+Operator and Institution currently share one login credential
+(`ADMIN_PORTAL_PASSWORD`, checked via the Orchestrator's HTTPBasic gate) -
+there's no separate per-institution login exposed as a browser API yet.
 
 ## Watching logs live
 
