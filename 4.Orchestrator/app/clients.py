@@ -130,6 +130,15 @@ async def call_agent3_ingest(ticket: dict[str, Any]) -> dict[str, Any]:
     return response.json()
 
 
+async def call_agent3_ask(question: str) -> dict[str, Any]:
+    """S3 "Ask Sahyog" RAG Q&A - see "3.Triage and route/app/rag.py"."""
+    response = await _client.post(
+        f"{settings.agent3_base_url}/rag/ask", json={"question": question}
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 async def upload_audio_to_agent1(audio_bytes: bytes, filename: Optional[str]) -> dict[str, Any]:
     """Hand raw audio bytes (e.g. a browser recording) to Agent 1 and get
     back a local_audio_path usable with call_agent1(), plus the durable

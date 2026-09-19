@@ -1,7 +1,9 @@
 """
-Starts all four Sahyog services (Language Normalizer, Evidence Extractor,
-Triage & Route, Orchestrator) and streams their combined output into one
-timestamped, per-service-tagged log file instead of four separate windows.
+Starts every Sahyog backend service (Language Normalizer, Evidence
+Extractor, Triage & Route, Orchestrator, ULB Dispatch, Track B Innovation,
+Industry Partnership, Lifecycle Outcome, Transparency Layer - see SERVICES
+below) and streams their combined output into one timestamped,
+per-service-tagged log file instead of nine separate windows.
 
 Usage:
     python start_pipeline.py
@@ -102,7 +104,7 @@ SERVICES = [
 DEPENDENCIES = [
     ("Postgres (Agent 3's DB)", "127.0.0.1", 5432,
      'cd "3.Triage and route" && docker compose up -d --build'),
-    ("Ollama (Agent 2's local models)", "127.0.0.1", 11434,
+    ("Ollama (Agent 2's local models + Agent 3's Ask Sahyog RAG)", "127.0.0.1", 11434,
      # --gpus=all is required - without it Ollama silently falls back to
      # CPU inference, which is roughly 9x slower for C1/C3 on this box
      # (measured: 5.2s vs 33.2s for text, 10s vs 106s for vision).
@@ -192,6 +194,11 @@ def main() -> int:
     print(f"\nAll services launching. Centralized log: {LOG_FILE}")
     print("Citizen UI: run citizen-portal separately (see its own README)")
     print("Dashboard:  http://127.0.0.1:8005/dashboard")
+    print(
+        "Ask Sahyog (RAG): first run, in \"3.Triage and route\": "
+        "psql \"$DATABASE_URL\" -f schema_004_kb_chunks.sql && "
+        "python -m app.rag_ingest"
+    )
     print("Press Ctrl+C to stop everything.\n")
 
     try:

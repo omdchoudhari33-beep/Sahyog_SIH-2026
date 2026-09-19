@@ -208,6 +208,14 @@ export async function speakText(text, language) {
   }
 }
 
+// "Ask Sahyog" RAG Q&A - proxied through the Orchestrator's /ask, which
+// normalizes non-English questions via Agent 1 before handing them to
+// Agent 3's retrieval+generation pipeline. Unlike speakText, a failure here
+// throws (via request()/postJson()) so the ask page can show a real error.
+export function askQuestion(question, language) {
+  return postJson(`${ORCHESTRATOR_URL}/ask`, { question, language: language || "en" }, { timeoutMs: 90000 });
+}
+
 // ---------------------------------------------------------------------------
 // Agent 3 - Triage & Route. Its /dno/* routes have no authentication at all
 // (confirmed by reading "3.Triage and route/app/main.py") and are CORS-open

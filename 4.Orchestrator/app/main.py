@@ -18,6 +18,7 @@ from app.clients import (
     call_agent1_speak,
     call_agent2,
     call_agent2_attach_photo,
+    call_agent3_ask,
     call_agent3_ingest,
     decide_nodal_proposal,
     decide_trackb_match,
@@ -176,6 +177,36 @@ async def api_speak(payload: SpeakPayload):
     if audio_bytes is None:
         return Response(status_code=204)
     return Response(content=audio_bytes, media_type="audio/wav")
+
+
+class AskPayload(BaseModel):
+    question: str
+    language: Optional[str] = "en"
+
+
+@app.post("/ask")
+async def api_ask(payload: AskPayload):
+    """Proxy for Agent 3's "Ask Sahyog" RAG Q&A - browser never talks to
+    Agent 3 directly. Non-English questions are normalized/translated via
+    Agent 1 first (same call the /submit flow already uses); if that hop
+    fails, we fall back to asking Agent 3 with the citizen's original text
+    rather than failing the whole request."""
+    question = payload.question
+    if payload.language and payload.language != "en":
+        try:
+            with _Stage("agent1 normalize question"):
+                norm = await call_agent1(
+                    uuid.uuid4().hex, "text", text=question, source_language=payload.language
+                )
+            question = norm.get("english_translation") or norm.get("standardized_text") or question
+        except Exception:
+            pass
+
+    try:
+        with _Stage("agent3 ask (RAG)"):
+            return await call_agent3_ask(question)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Agent 3 (triage & route) unavailable: {exc}") from exc
 
 
 @app.post("/api/tickets/{ticket_id}/decision", dependencies=[Depends(require_admin_portal_password)])

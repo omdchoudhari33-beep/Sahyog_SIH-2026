@@ -6,12 +6,13 @@ from app.config import settings
 from app.db import get_db
 from app.schemas import (
     IncomingTicket, DedupResult, PrioritizedTicket, TicketPage,
-    OperatorDecision, DecisionResult,
+    OperatorDecision, DecisionResult, AskQuery, AskResult,
 )
 from app.dedup import process_incoming_ticket
 from app.embedding import get_embedding_model
 from app.priority import recalculate_all_priorities, recalculate_ticket_priority
 from app.validation import list_prioritized_tickets, get_prioritized_ticket, apply_operator_decision
+from app.rag import answer_question
 
 app = FastAPI(title="Agent_D D2 + G1 + DNO Validation Service", version="0.3.0")
 # Lets the citizen-portal Next.js app call this service straight from the
@@ -78,3 +79,8 @@ def decide_dno_ticket(ticket_id: int, decision: OperatorDecision, db: Session = 
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+@app.post("/rag/ask", response_model=AskResult)
+def ask_question(payload: AskQuery, db: Session = Depends(get_db)):
+    """'Ask Sahyog' RAG Q&A - see app/rag.py for the retrieve/augment/generate pipeline."""
+    return answer_question(db, payload.question)

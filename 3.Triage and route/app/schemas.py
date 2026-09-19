@@ -65,3 +65,17 @@ class DecisionResult(BaseModel):
     operator_id: Optional[str] = None
     notes: Optional[str] = None
     decided_at: datetime
+
+class AskQuery(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+class AskSource(BaseModel):
+    type: Literal["knowledge_base", "ticket"]
+    title: Optional[str] = None
+    source: Optional[str] = None
+    ticket_id: Optional[int] = None
+    status: Optional[str] = None
+
+class AskResult(BaseModel):
+    answer: str
+    sources: list[AskSource]

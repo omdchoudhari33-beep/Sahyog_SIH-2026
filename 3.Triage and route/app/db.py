@@ -67,6 +67,20 @@ class ActiveTicket(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class KbChunk(Base):
+    """RAG knowledge-base chunk (see schema_004_kb_chunks.sql and
+    app/rag_ingest.py, which populates this from knowledge_base/*.md)."""
+
+    __tablename__ = "kb_chunks"
+
+    id = Column(BigInteger, primary_key=True)
+    source = Column(Text, nullable=False)
+    title = Column(Text, nullable=False)
+    chunk_text = Column(Text, nullable=False)
+    embedding = Column(Vector(settings.EMBEDDING_DIM), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class ColdStorage(Base):
     __tablename__ = "cold_storage"
 

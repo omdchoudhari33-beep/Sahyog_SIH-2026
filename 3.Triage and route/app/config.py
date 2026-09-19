@@ -15,6 +15,14 @@ class Settings:
     EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
     EMBEDDING_DIM: int = int(os.getenv("EMBEDDING_DIM", "384"))
 
+    # RAG Q&A ("Ask Sahyog"). Same Ollama instance and model already used by
+    # "2.Evidence Extractor" for C1/C3 - reusing it here means no second
+    # model download and no risk of Ollama evicting one to load the other.
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    RAG_MODEL_NAME: str = os.getenv("RAG_MODEL_NAME", "llama3.2:3b")
+    RAG_TOP_K_KB: int = int(os.getenv("RAG_TOP_K_KB", "4"))
+    RAG_TOP_K_TICKETS: int = int(os.getenv("RAG_TOP_K_TICKETS", "3"))
+
     # D2 tuning knobs
     GEO_RADIUS_METERS: float = float(os.getenv("GEO_RADIUS_METERS", "100"))
     SIMILARITY_MERGE_THRESHOLD: float = float(

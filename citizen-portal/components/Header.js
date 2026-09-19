@@ -9,6 +9,7 @@ const CITIZEN_NAV = [
   { href: "/", key: "nav.home" },
   { href: "/submit", key: "nav.report" },
   { href: "/track", key: "nav.track" },
+  { href: "/ask", key: "nav.ask" },
   { href: "/transparency", key: "nav.transparency" },
   { href: "/about", key: "nav.about" },
 ];
