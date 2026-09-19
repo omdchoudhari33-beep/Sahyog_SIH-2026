@@ -47,9 +47,17 @@ def build_ticket_payload(
     longitude: float,
     raw_evidence: dict,
     default_population_impact: float,
+    report_photo_media_id: int | None = None,
+    report_audio_media_id: int | None = None,
 ) -> dict:
     """Shared IncomingTicket builder for Agent 3 - used by both the one-shot
-    /submit flow and the conversational flow's finalize step."""
+    /submit flow and the conversational flow's finalize step.
+
+    report_photo_media_id / report_audio_media_id are FKs into the shared
+    media_objects object storage registry (see "3.Triage and route/
+    schema_003_media_objects.sql") - the durable copies of whatever photo/
+    audio the citizen actually submitted, when Agent 1/Agent 2 persisted one.
+    """
     severity = structured_evidence["severity"]
     return {
         "standardized_problem_statement": structured_evidence["normalized_english"],
@@ -61,4 +69,6 @@ def build_ticket_payload(
         "longitude": longitude,
         "ai_suggested_track": track_to_ticket_value(structured_evidence["suggested_track"]),
         "raw_evidence": raw_evidence,
+        "report_photo_media_id": report_photo_media_id,
+        "report_audio_media_id": report_audio_media_id,
     }

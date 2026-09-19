@@ -30,9 +30,14 @@ class ConversationSession:
     normalized_english: Optional[str] = None
     structured_evidence: Optional[dict[str, Any]] = None
 
+    # Populated after the "describe" step, when the input was audio - the
+    # durable object storage reference S1 persisted the recording under.
+    report_audio_media_id: Optional[int] = None
+
     # Populated after the "photo" step (S2's C2 + C3)
     geolocation: Optional[dict[str, Any]] = None
     visual_evidence: Optional[dict[str, Any]] = None
+    report_photo_media_id: Optional[int] = None
 
     # Populated by the "location" step if the photo had no usable GPS
     latitude: Optional[float] = None

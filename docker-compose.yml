@@ -1,0 +1,308 @@
+# Full SAHYOG stack: `cp .env.example .env` (fill in real values), then
+# `docker compose up --build`. Service names double as internal DNS names
+# (e.g. http://agent3:8003) - every backend's own env vars already default
+# to localhost for non-Docker use, so only the values that differ under
+# Docker networking are overridden here.
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: "3.Triage and route/Dockerfile.postgres"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-dno_triage}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-dno_triage}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # quay.io/minio/minio is MinIO's own official mirror - Docker Hub's
+  # minio/minio now requires a paid login to pull (their 2024 licensing
+  # change; confirmed by `docker pull minio/minio` returning "pull access
+  # denied" while the quay.io tag pulls freely).
+  minio:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sahyog}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-sahyog-dev-secret}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  # One-shot: pulls the two models Agent 2 needs, then exits. Agent 2 waits
+  # for this to complete successfully before starting (see its depends_on).
+  ollama-pull:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["sh", "-c", "ollama pull llama3.2:3b && ollama pull llava"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  agent1:
+    build:
+      context: "./1.Language normalizer"
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-dno_triage}
+      WEBHOOK_SECRET: ${AGENT1_WEBHOOK_SECRET:-change-me-webhook-secret}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:3000}
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:9000}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-sahyog}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-sahyog-dev-secret}
+      BHASHINI_USER_ID: ${BHASHINI_USER_ID:-}
+      BHASHINI_ULCA_API_KEY: ${BHASHINI_ULCA_API_KEY:-}
+      BHASHINI_PIPELINE_ID: ${BHASHINI_PIPELINE_ID:-64392f96daac500b55c543cd}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  agent2:
+    build:
+      context: "./2.Evidence Extractor"
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-dno_triage}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:3000}
+      OLLAMA_BASE_URL: http://ollama:11434
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:9000}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-sahyog}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-sahyog-dev-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+
+  agent3:
+    build:
+      context: "./3.Triage and route"
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-dno_triage}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:3000}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:9000}
+      # Fire-and-forget notifications on an operator decision (see
+      # app/validation.py) - raw os.getenv() calls, not part of this
+      # service's Settings class, so easy to miss: both default to
+      # localhost, which is wrong from inside a container.
+      ULB_DISPATCH_BASE_URL: http://agent5:8004
+      TRACKB_BASE_URL: http://agent6:8006
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  orchestrator:
+    build:
+      context: "./4.Orchestrator"
+    ports:
+      - "8005:8005"
+    environment:
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:3000}
+      AGENT1_BASE_URL: http://agent1:8001
+      AGENT2_BASE_URL: http://agent2:8002
+      AGENT3_BASE_URL: http://agent3:8003
+      AGENT5_BASE_URL: http://agent5:8004
+      AGENT6_BASE_URL: http://agent6:8006
+      AGENT7_BASE_URL: http://agent7:8007
+      AGENT8_BASE_URL: http://agent8:8008
+      AGENT9_BASE_URL: http://agent9:8009
+      AGENT1_WEBHOOK_SECRET: ${AGENT1_WEBHOOK_SECRET:-change-me-webhook-secret}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
+      ADMIN_PORTAL_PASSWORD: ${ADMIN_PORTAL_PASSWORD:-change-me-admin-password}
+    depends_on:
+      - agent1
+      - agent2
+      - agent3
+      - agent5
+      - agent6
+      - agent7
+      - agent8
+      - agent9
+
+  agent5:
+    build:
+      context: "./5.ULB Dispatch"
+    ports:
+      - "8004:8004"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-dno_triage}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
+      ADMIN_FORM_PASSWORD: ${ADMIN_FORM_PASSWORD:-change-me-admin-password}
+      STATUS_LINK_BASE_URL: http://localhost:8004
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:9000}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-sahyog}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-sahyog-dev-secret}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      EMAIL_DRY_RUN: ${EMAIL_DRY_RUN:-true}
+      RUN_BACKGROUND_LOOP_IN_PROCESS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  agent6:
+    build:
+      context: "./6.Track B Innovation"
+    ports:
+      - "8006:8006"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-dno_triage}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
+      ADMIN_FORM_PASSWORD: ${ADMIN_FORM_PASSWORD:-change-me-admin-password}
+      STATUS_LINK_BASE_URL: http://localhost:8006
+      INDUSTRY_PARTNERSHIP_BASE_URL: http://agent7:8007
+      LIFECYCLE_OUTCOME_BASE_URL: http://agent8:8008
+      TRANSPARENCY_BASE_URL: http://agent9:8009
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      EMAIL_DRY_RUN: ${EMAIL_DRY_RUN:-true}
+      # Read-only: renders the citizen's report photo inside broadcast briefs
+      # (app/brief.py) - no S3_ACCESS_KEY/SECRET_KEY needed, this service
+      # never uploads.
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:9000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  agent7:
+    build:
+      context: "./7.Industry Partnership"
+    ports:
+      - "8007:8007"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-dno_triage}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
+      ADMIN_FORM_PASSWORD: ${ADMIN_FORM_PASSWORD:-change-me-admin-password}
+      STATUS_LINK_BASE_URL: http://localhost:8007
+      LIFECYCLE_OUTCOME_BASE_URL: http://agent8:8008
+      TRANSPARENCY_BASE_URL: http://agent9:8009
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      EMAIL_DRY_RUN: ${EMAIL_DRY_RUN:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  agent8:
+    build:
+      context: "./8.Lifecycle Outcome"
+    ports:
+      - "8008:8008"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-dno_triage}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
+      ADMIN_FORM_PASSWORD: ${ADMIN_FORM_PASSWORD:-change-me-admin-password}
+      ULB_DISPATCH_BASE_URL: http://agent5:8004
+      TRANSPARENCY_BASE_URL: http://agent9:8009
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:9000}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-sahyog}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-sahyog-dev-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  agent9:
+    build:
+      context: "./9.Transparency Layer"
+    ports:
+      - "8009:8009"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-dno_triage}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-change-me-internal-token}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:3000}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:9000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Self-hosted Santali ASR/translation/TTS (see santali-voice-service/app.py) -
+  # Bhashini has no Santali model at all, and the required ML libraries
+  # (torch/transformers) fail to load natively on Windows here (Smart App
+  # Control blocks their DLLs), so this one piece runs containerized like
+  # Postgres/MinIO/Ollama above, while every actual pipeline agent still
+  # runs natively per this project's no-Docker-for-app-services rule.
+  # "1.Language normalizer" talks to it over HTTP at localhost:8100.
+  santali-voice:
+    build:
+      context: "./santali-voice-service"
+    ports:
+      - "8100:8100"
+    environment:
+      # Two of the three models here (IndicTrans2 for translation,
+      # Indic Parler-TTS for spoken replies) are gated on HuggingFace -
+      # get a token at https://huggingface.co/settings/tokens after
+      # accepting each model's access terms on its own page (both use
+      # "auto" gating - approval is instant, no manual review). Leave
+      # blank and ASR alone still works; translation/TTS calls will fail
+      # with a clear "gated repo" error until this is set.
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - santali_hf_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  citizen-portal:
+    build:
+      context: "./citizen-portal"
+      args:
+        NEXT_PUBLIC_ORCHESTRATOR_URL: ${NEXT_PUBLIC_ORCHESTRATOR_URL:-http://localhost:8005}
+        NEXT_PUBLIC_AGENT1_URL: ${NEXT_PUBLIC_AGENT1_URL:-http://localhost:8001}
+        NEXT_PUBLIC_AGENT2_URL: ${NEXT_PUBLIC_AGENT2_URL:-http://localhost:8002}
+        NEXT_PUBLIC_AGENT3_URL: ${NEXT_PUBLIC_AGENT3_URL:-http://localhost:8003}
+        NEXT_PUBLIC_AGENT9_URL: ${NEXT_PUBLIC_AGENT9_URL:-http://localhost:8009}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - orchestrator
+      - agent9
+
+volumes:
+  postgres_data:
+  minio_data:
+  ollama_data:
+  santali_hf_cache:

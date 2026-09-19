@@ -48,3 +48,22 @@ def onboard_hei(
 
 def list_heis(db: Session) -> list[HeiRegistry]:
     return db.query(HeiRegistry).filter(HeiRegistry.active.is_(True)).order_by(HeiRegistry.institution_name).all()
+
+
+def reset_hei_password(db: Session, hei_id: int, new_password: str | None = None) -> tuple[HeiRegistry, str]:
+    """Admin-only password reset for an already-onboarded HEI - same
+    "plaintext returned once, only the hash persisted" contract as
+    onboard_hei(). Needed because seed_jharkhand_heis.py generates a random
+    password per institution and never surfaces it anywhere (by design,
+    since none of those contact emails are real yet) - this is how an admin
+    actually gets a real, usable login for one of the seeded institutions."""
+    hei = db.query(HeiRegistry).filter(HeiRegistry.id == hei_id).one_or_none()
+    if hei is None:
+        raise LookupError(f"no HEI with id {hei_id}")
+
+    plaintext_password = new_password or secrets.token_urlsafe(9)
+    hei.password_hash = hash_password(plaintext_password)
+    db.add(hei)
+    db.commit()
+    db.refresh(hei)
+    return hei, plaintext_password

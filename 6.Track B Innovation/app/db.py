@@ -38,6 +38,21 @@ class ActiveTicket(Base):
     status = Column(Text, nullable=False, default="active")
 
 
+class MediaObject(Base):
+    """Read-only mapping onto the table owned by "3.Triage and route" (see
+    its schema_003_media_objects.sql) - only the PK. This service never
+    creates/queries rows through the ORM (see app/storage.py, which inserts
+    via raw SQL like every other service's copy of object_storage.py) -
+    this class exists purely so ForeignKey("media_objects.id") on
+    Proposal.solution_document_media_id below has a real mapped table to
+    resolve against; SQLAlchemy's declarative FK resolution fails at
+    startup without it, even though no code here ever queries through it."""
+
+    __tablename__ = "media_objects"
+
+    id = Column(BigInteger, primary_key=True)
+
+
 class HeiRegistry(Base):
     __tablename__ = "hei_registry"
 
@@ -94,6 +109,23 @@ class HeiMatch(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class HeiBroadcastNotice(Base):
+    """Informational fan-out of a ticket's problem brief to the top-N
+    matching HEIs (see schema_003_hei_broadcast.sql) - independent of
+    HeiMatch's single-active-match accept/decline state machine."""
+
+    __tablename__ = "hei_broadcast_notices"
+
+    id = Column(BigInteger, primary_key=True)
+    ticket_id = Column(BigInteger, ForeignKey("active_tickets.id"), nullable=False)
+    hei_id = Column(BigInteger, ForeignKey("hei_registry.id"), nullable=False)
+    capability_id = Column(BigInteger, ForeignKey("hei_capabilities.id"), nullable=False)
+    rank = Column(Integer, nullable=False)
+    similarity_score = Column(Float, nullable=False)
+    brief_html = Column(Text, nullable=False)
+    sent_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class Team(Base):
     __tablename__ = "teams"
 
@@ -120,6 +152,7 @@ class Proposal(Base):
     status = Column(Text, nullable=False, default="submitted")
     nodal_officer_id = Column(Text)
     nodal_notes = Column(Text)
+    solution_document_media_id = Column(BigInteger, ForeignKey("media_objects.id"), nullable=True)
     submitted_at = Column(DateTime(timezone=True), server_default=func.now())
     decided_at = Column(DateTime(timezone=True), nullable=True)
 

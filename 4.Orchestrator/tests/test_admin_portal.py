@@ -54,9 +54,44 @@ def test_api_admin_track_b_decide_requires_password(monkeypatch):
     assert response.status_code == 401
 
 
-def test_citizen_form_does_not_require_admin_password(monkeypatch):
-    """The citizen-facing routes must stay public - only /dashboard and
-    /admin (and their /api/* proxies) are gated."""
+def test_api_admin_track_b_broadcast_proxies_with_correct_auth(monkeypatch):
     monkeypatch.setattr(settings, "admin_portal_password", "secret123")
-    response = TestClient(app).get("/")
+    with patch("app.main.list_trackb_broadcast", new=AsyncMock(return_value=[{"rank": 1, "institution_name": "BIT Mesra"}])):
+        response = TestClient(app).get("/api/admin/track-b/1/broadcast", auth=("admin", "secret123"))
     assert response.status_code == 200
+    assert response.json() == [{"rank": 1, "institution_name": "BIT Mesra"}]
+
+
+def test_api_admin_track_b_broadcast_requires_password(monkeypatch):
+    monkeypatch.setattr(settings, "admin_portal_password", "secret123")
+    response = TestClient(app).get("/api/admin/track-b/1/broadcast")
+    assert response.status_code == 401
+
+
+def test_api_admin_lifecycle_patent_proxies_with_correct_auth(monkeypatch):
+    monkeypatch.setattr(settings, "admin_portal_password", "secret123")
+    with patch("app.main.record_patent", new=AsyncMock(return_value={"id": 1, "title": "X"})) as mock_record:
+        response = TestClient(app).post(
+            "/api/admin/lifecycle/4/patent", auth=("admin", "secret123"),
+            json={"proposal_id": 1, "title": "X", "applicant_names": ["A"], "filing_status": "filed"},
+        )
+    assert response.status_code == 200
+    assert response.json() == {"id": 1, "title": "X"}
+    mock_record.assert_called_once_with(4, 1, "X", ["A"], "filed", None, None)
+
+
+def test_api_admin_lifecycle_patent_requires_password(monkeypatch):
+    monkeypatch.setattr(settings, "admin_portal_password", "secret123")
+    response = TestClient(app).post("/api/admin/lifecycle/4/patent", json={"proposal_id": 1, "title": "X"})
+    assert response.status_code == 401
+
+
+def test_root_does_not_require_admin_password(monkeypatch):
+    """Only /dashboard and /admin (and their /api/* proxies) are gated.
+    "/" no longer serves a citizen-facing UI - citizen-portal (the Next.js
+    app) is the sole citizen frontend now - it just redirects to /docs,
+    same convention as every other service in this repo."""
+    monkeypatch.setattr(settings, "admin_portal_password", "secret123")
+    response = TestClient(app).get("/", follow_redirects=False)
+    assert response.status_code in (307, 308)
+    assert response.headers["location"] == "/docs"

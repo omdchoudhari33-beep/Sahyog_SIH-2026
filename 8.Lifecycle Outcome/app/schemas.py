@@ -41,6 +41,7 @@ class PilotValidationOut(BaseModel):
     id: int
     ticket_id: int
     proposal_id: int
+    photo_url: str
     geo_check_passed: Optional[bool]
     similarity_score: Optional[float]
     verdict: str
@@ -55,3 +56,28 @@ class DispositionRequest(BaseModel):
     notes: Optional[str] = None
     startup_name: Optional[str] = None
     incubator_name: Optional[str] = None
+
+
+class PatentFilingRequest(BaseModel):
+    proposal_id: int
+    title: str
+    applicant_names: list[str] = []
+    filing_status: str = "filed"  # 'filed' | 'published' | 'granted' | 'abandoned'
+    application_number: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PatentRecordOut(BaseModel):
+    id: int
+    ticket_id: int
+    proposal_id: int
+    title: str
+    applicant_names: list[str]
+    filing_status: str
+    application_number: Optional[str]
+    filed_at: Optional[datetime]
+    granted_at: Optional[datetime]
+    notes: Optional[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

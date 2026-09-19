@@ -1,0 +1,13 @@
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.env
+tmp_audio
+local_audio
+temp_uploads
+closure_uploads
+pilot_uploads
+tests
+.vs
+tools/whisper.cpp

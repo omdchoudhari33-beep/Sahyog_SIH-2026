@@ -22,6 +22,31 @@ class HeiMatchOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class HeiMatchWithTicketOut(HeiMatchOut):
+    """Same as HeiMatchOut, plus the ticket's own domain/description - the
+    institution portal's Match Inbox needs to show what the case is actually
+    about, not just its id/similarity score."""
+
+    ticket_domain: Optional[str] = None
+    ticket_problem_statement: Optional[str] = None
+    ticket_lat: Optional[float] = None
+    ticket_lon: Optional[float] = None
+    institution_name: Optional[str] = None
+
+
+class BroadcastNoticeOut(BaseModel):
+    id: int
+    ticket_id: int
+    hei_id: int
+    institution_name: str
+    rank: int
+    similarity_score: float
+    match_status: Optional[str] = None
+    sent_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class TrackBAck(BaseModel):
     ticket_id: int
     match: Optional[HeiMatchOut] = None
@@ -60,6 +85,8 @@ class ProposalOut(BaseModel):
     status: str
     nodal_officer_id: Optional[str]
     nodal_notes: Optional[str]
+    solution_document_media_id: Optional[int] = None
+    solution_document_url: Optional[str] = None
     submitted_at: datetime
     decided_at: Optional[datetime]
 

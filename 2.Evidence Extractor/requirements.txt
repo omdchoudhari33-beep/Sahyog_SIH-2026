@@ -6,3 +6,10 @@ pillow==10.4.0
 requests==2.32.3
 pydantic==2.9.2
 pytest==8.3.3
+python-dotenv==1.0.1
+# Object storage client (MinIO / any S3-compatible endpoint) - see
+# object_storage.py.
+boto3==1.35.36
+# Optional media_objects registration (see storage.py) - only imported at
+# runtime if DATABASE_URL is set.
+psycopg2-binary==2.9.10

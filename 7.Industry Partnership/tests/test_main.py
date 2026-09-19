@@ -13,6 +13,23 @@ def test_health_endpoint():
     assert response.json() == {"status": "ok"}
 
 
+def test_list_ledgers_registered_before_proposal_id_route(monkeypatch):
+    """Regression test for a real bug caught live via the Admin Portal:
+    GET /partnership/{proposal_id} was registered before GET
+    /partnership/ledgers, so {proposal_id} greedily matched the literal
+    "ledgers" segment and 422'd on int-parsing before this route ever ran."""
+    monkeypatch.setattr(settings, "INTERNAL_SERVICE_TOKEN", "expected-secret")
+    fake_db = MagicMock()
+    fake_db.query.return_value.order_by.return_value.all.return_value = []
+    app.dependency_overrides[get_db] = lambda: fake_db
+    try:
+        response = TestClient(app).get("/partnership/ledgers", headers={"X-Internal-Token": "expected-secret"})
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_list_ledgers_requires_internal_token(monkeypatch):
     monkeypatch.setattr(settings, "INTERNAL_SERVICE_TOKEN", "expected-secret")
     fake_db = MagicMock()

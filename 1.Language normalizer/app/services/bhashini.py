@@ -18,39 +18,44 @@ INFERENCE_URL = "https://dhruva-api.bhashini.gov.in/services/inference/pipeline"
 # direction; TTS needs a family-specific model per language.
 TRANSLATION_SERVICE_ID = "ai4bharat/indictrans-v2-all-gpu--t4"
 
+# Individually verified against this project's key via the getModelsPipeline
+# discovery endpoint (POST bhashini_config_url with
+# {"pipelineTasks":[{"taskType":"tts","config":{"language":{"sourceLanguage":"<code>"}}}],
+# "pipelineRequestConfig":{"pipelineId":...}}, Authorization header, same
+# auth style as the inference endpoint - NOT the userID+ulcaApiKey pair).
+# en/hi/bn/or all return a real serviceId; ur/ne/mai authoritatively return
+# "No supported tasks found for this request!!" - TTS for those three is
+# simply not provisioned on this pipeline, which is why an earlier version
+# of this map (assuming the whole "indo_aryan" model family shared one
+# working serviceId across all of hi/bn/or/ur/ne/mai) sent ur/ne/mai
+# requests straight into a real 500 from Bhashini's own server every time.
+# Translation (SUPPORTED_LANGUAGES below) is unaffected - ur/ne/mai text
+# still translates fine, only the TTS step is unavailable for them.
 TTS_SERVICE_IDS = {
     "en": "ai4bharat/indic-tts-coqui-misc-gpu--t4",
     "hi": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4",
     "bn": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4",
     "or": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4",
-    "ur": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4",
-    "ne": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4",
-    "mai": "ai4bharat/indic-tts-coqui-indo_aryan-gpu--t4",
 }
 
-# UNVERIFIED against this project's key - unlike TRANSLATION_SERVICE_ID and
-# TTS_SERVICE_IDS above, these were not confirmed by a live call. Same
-# discovery-endpoint problem applies (see comment above), so before trusting
-# this path in production, send one real recording per language and check
-# the transcript actually comes back sensible - if a serviceId is wrong for
-# this key, speech_to_text() below fails closed (returns None), which
-# transcribe_with_cleanup() in app/media/pipeline.py turns into a raised
-# AsrFailedError - there is NO local ASR fallback any more (see that
-# module's docstring), so a wrong/unreachable serviceId here means the
-# webhook returns a 502 and voice input is unavailable until fixed. Santali
-# ("sat") has no entry and isn't in SUPPORTED_LANGUAGES at all - Bhashini's
-# translation endpoint explicitly rejected it as unsupported for this key;
-# no ASR model for it was found either. Maithili also has a dedicated
-# single-language model (bhashini/iisc/asr-mai-t4) - worth trying if the
-# multilingual one below underperforms for it.
+# Individually verified against this project's key via the getModelsPipeline
+# discovery endpoint (same technique as TTS_SERVICE_IDS above). en/hi/bn/or/ur
+# all return a real serviceId - ur's ASR genuinely works even though its TTS
+# does not (see TTS_SERVICE_IDS - the two tasks are provisioned independently
+# on this pipeline). ne/mai authoritatively return "No supported tasks found
+# for this request!!" for ASR too, so they're left out entirely rather than
+# listed with a serviceId that would just fail at call time - lang_code not
+# in ASR_SERVICE_IDS is exactly the check app/media/pipeline.py's
+# transcribe_with_cleanup() uses to raise UnsupportedAsrLanguageError
+# up front instead of attempting a doomed API call. Santali ("sat") has no
+# entry either and isn't in SUPPORTED_LANGUAGES at all - Bhashini has no
+# ASR or translation model for it whatsoever.
 ASR_SERVICE_IDS = {
     "en": "ai4bharat/whisper-medium-en--gpu--t4",
     "hi": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4",
     "bn": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4",
     "or": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4",
     "ur": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4",
-    "ne": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4",
-    "mai": "ai4bharat/conformer-multilingual-indo_aryan-gpu--t4",
 }
 
 # Whisper/ASR language names -> ISO codes Bhashini expects.
@@ -70,6 +75,16 @@ _LANGUAGE_CODES = {
 # "sourceLanguage is not supported") - there is no fallback that fixes
 # this, it's a scope limit of the platform itself, for any user's key.
 SUPPORTED_LANGUAGES = {"hi", "bn", "or", "ne", "mai", "ur", "en"}
+
+
+def is_language_supported(language: str | None) -> bool:
+    """True if Bhashini can translate/synthesize speech for this language
+    at all (ASR support is checked separately - see ASR_SERVICE_IDS).
+    False for Santali ("sat") and anything else not in SUPPORTED_LANGUAGES -
+    callers must treat that as "route to human review with the original
+    text preserved", never guess/attempt processing anyway."""
+    code = resolve_language_code(language)
+    return code is None or code in SUPPORTED_LANGUAGES  # None == "no language given" == treat as English/passthrough
 
 
 def resolve_language_code(language: str | None) -> str | None:

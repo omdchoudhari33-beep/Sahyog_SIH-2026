@@ -130,15 +130,17 @@ async def call_agent3_ingest(ticket: dict[str, Any]) -> dict[str, Any]:
     return response.json()
 
 
-async def upload_audio_to_agent1(audio_bytes: bytes, filename: Optional[str]) -> str:
+async def upload_audio_to_agent1(audio_bytes: bytes, filename: Optional[str]) -> dict[str, Any]:
     """Hand raw audio bytes (e.g. a browser recording) to Agent 1 and get
-    back a local_audio_path usable with call_agent1()."""
+    back a local_audio_path usable with call_agent1(), plus the durable
+    object storage reference (media_id/media_url) Agent 1 persisted it
+    under - see "1.Language normalizer/app/api/webhook.py"'s /audio/upload."""
     files = {"file": (filename or "recording.webm", audio_bytes, "application/octet-stream")}
     response = await _client.post(
         f"{settings.agent1_base_url}/api/v1/audio/upload", files=files
     )
     response.raise_for_status()
-    return response.json()["local_audio_path"]
+    return response.json()
 
 
 async def list_agent3_tickets(limit: int, offset: int) -> dict[str, Any]:
@@ -147,6 +149,13 @@ async def list_agent3_tickets(limit: int, offset: int) -> dict[str, Any]:
         f"{settings.agent3_base_url}/dno/tickets",
         params={"limit": limit, "offset": offset},
     )
+    response.raise_for_status()
+    return response.json()
+
+
+async def get_agent3_ticket(ticket_id: int) -> dict[str, Any]:
+    """Proxy for the operator ticket detail view (same trust boundary as list_agent3_tickets)."""
+    response = await _client.get(f"{settings.agent3_base_url}/dno/tickets/{ticket_id}")
     response.raise_for_status()
     return response.json()
 
@@ -248,6 +257,102 @@ async def apply_lifecycle_disposition(ticket_id: int, proposal_id: int, disposit
         headers=_internal_headers(),
         json={"proposal_id": proposal_id, "disposition": disposition, "notes": notes, "startup_name": startup_name, "incubator_name": incubator_name},
     )
+    response.raise_for_status()
+    return response.json()
+
+
+async def record_patent(ticket_id: int, proposal_id: int, title: str, applicant_names: list[str], filing_status: str, application_number: Optional[str], notes: Optional[str]) -> dict[str, Any]:
+    response = await _client.post(
+        f"{settings.agent8_base_url}/lifecycle/{ticket_id}/patent",
+        headers=_internal_headers(),
+        json={
+            "proposal_id": proposal_id, "title": title, "applicant_names": applicant_names,
+            "filing_status": filing_status, "application_number": application_number, "notes": notes,
+        },
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+async def list_pending_matches() -> dict[str, Any]:
+    response = await _client.get(
+        f"{settings.agent6_base_url}/trackb/matches/pending", headers=_internal_headers()
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+async def decide_trackb_match(match_id: int, decision: str, reason: Optional[str]) -> dict[str, Any]:
+    response = await _client.post(
+        f"{settings.agent6_base_url}/trackb/matches/{match_id}/decide",
+        headers=_internal_headers(),
+        json={"decision": decision, "reason": reason},
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+async def form_trackb_team(
+    match_id: int, team_name: str, faculty_mentor_name: str, faculty_mentor_email: str, student_names: list[str]
+) -> dict[str, Any]:
+    response = await _client.post(
+        f"{settings.agent6_base_url}/trackb/matches/{match_id}/team",
+        headers=_internal_headers(),
+        json={
+            "team_name": team_name,
+            "faculty_mentor_name": faculty_mentor_name,
+            "faculty_mentor_email": faculty_mentor_email,
+            "student_names": student_names,
+        },
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+async def submit_trackb_proposal(
+    match_id: int,
+    title: str,
+    summary: str,
+    *,
+    requested_budget: Optional[float] = None,
+    timeline_weeks: Optional[int] = None,
+    solution_document_bytes: Optional[bytes] = None,
+    solution_document_filename: Optional[str] = None,
+) -> dict[str, Any]:
+    """Forwards the citizen-portal's proposal form - including the solution
+    PDF, if given - to Agent 6's internal-auth equivalent of its own
+    /university/matches/{id}/proposal, the same multipart-forwarding shape
+    call_agent2_attach_photo() above already uses for a photo upload."""
+    data: dict[str, str] = {"title": title, "summary": summary}
+    if requested_budget is not None:
+        data["requested_budget"] = str(requested_budget)
+    if timeline_weeks is not None:
+        data["timeline_weeks"] = str(timeline_weeks)
+
+    files = None
+    if solution_document_bytes is not None:
+        files = {"solution_document": (solution_document_filename or "solution.pdf", solution_document_bytes, "application/pdf")}
+
+    response = await _client.post(
+        f"{settings.agent6_base_url}/trackb/matches/{match_id}/proposal",
+        headers=_internal_headers(),
+        data=data,
+        files=files,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+async def list_trackb_broadcast(ticket_id: int) -> dict[str, Any]:
+    response = await _client.get(
+        f"{settings.agent6_base_url}/trackb/{ticket_id}/broadcast", headers=_internal_headers()
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+async def recalculate_agent3_priority(ticket_id: int) -> dict[str, Any]:
+    response = await _client.post(f"{settings.agent3_base_url}/g1/recalculate/{ticket_id}")
     response.raise_for_status()
     return response.json()
 

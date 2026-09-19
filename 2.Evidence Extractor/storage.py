@@ -1,0 +1,18 @@
+"""Module-level ObjectStorage singleton, built from this service's own
+settings - same "one engine, built once, imported everywhere" idiom used
+for Postgres engines elsewhere in this repo (e.g. "5.ULB Dispatch"/app/db.py)."""
+from config import settings
+from object_storage import ObjectStorage
+
+storage = ObjectStorage(
+    endpoint_url=settings.S3_ENDPOINT_URL,
+    access_key=settings.S3_ACCESS_KEY,
+    secret_key=settings.S3_SECRET_KEY,
+    region=settings.S3_REGION,
+    use_ssl=settings.S3_USE_SSL,
+    public_base_url=settings.S3_PUBLIC_BASE_URL,
+    bucket_audio=settings.S3_BUCKET_AUDIO,
+    bucket_images=settings.S3_BUCKET_IMAGES,
+    database_url=settings.DATABASE_URL or None,
+    uploaded_by_service="2.evidence_extractor",
+)

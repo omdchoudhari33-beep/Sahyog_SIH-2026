@@ -29,11 +29,17 @@ Triage and route/
 │   ├── priority.py      # G1 priority scoring
 │   ├── dedup.py         # D2 deduplication
 │   └── embedding.py     # all-MiniLM-L6-v2 model
-├── schema.sql           # Database schema and validation audit table
+├── schema.sql                       # D2 core schema (active_tickets, cold_storage, validation_decisions)
+├── schema_002_dispatch_hook.sql     # ULB directory/contacts, dispatches, closure proofs
+├── schema_003_media_objects.sql     # Object storage registry (audio/image), see DATABASE.md
 ├── requirements.txt
 ├── .env.example
 └── INTEGRATION_README.md
 ```
+
+See `../DATABASE.md` at the repo root for the full, consolidated schema
+across all nine services and the object storage architecture (MinIO /
+S3-compatible), including which migration file owns which table.
 
 ## 3. Prerequisites
 
@@ -91,17 +97,27 @@ PRIORITY_AGE_HOURS_WEIGHT=0.1
 PRIORITY_POPULATION_WEIGHT=1.0
 ```
 
-Apply the schema:
+Apply the schema, in order (each file is additive-only and safe to re-run):
 
 ```bash
 psql "$DATABASE_URL" -f schema.sql
+psql "$DATABASE_URL" -f schema_002_dispatch_hook.sql
+psql "$DATABASE_URL" -f schema_003_media_objects.sql
 ```
 
 On Windows PowerShell, use the connection string directly if the `$DATABASE_URL` environment variable is not set:
 
 ```powershell
 psql "postgresql://postgres:postgres@localhost:5432/dno_triage" -f schema.sql
+psql "postgresql://postgres:postgres@localhost:5432/dno_triage" -f schema_002_dispatch_hook.sql
+psql "postgresql://postgres:postgres@localhost:5432/dno_triage" -f schema_003_media_objects.sql
 ```
+
+`docker compose up -d --build` (step 3 above) also starts a MinIO
+container for object storage (S3 API on `:9000`, web console on `:9001`,
+credentials `sahyog` / `sahyog-dev-secret` by default) - the services that
+upload citizen photos/audio (1, 2, 5, 8) point their `S3_*` env vars at it.
+See `../DATABASE.md` for the full object storage architecture.
 
 ## 5. Start the API
 
@@ -187,7 +203,9 @@ The response has this shape:
       "priority_score": 12.4,
       "created_at": "2026-09-15T10:00:00+00:00",
       "updated_at": "2026-09-15T10:10:00+00:00",
-      "suggested_track": "track_a"
+      "suggested_track": "track_a",
+      "report_photo_url": "http://localhost:9000/sahyog-images/citizen-reports/2026/09/15/ab12cd34.jpg",
+      "report_audio_url": null
     }
   ],
   "limit": 50,
@@ -202,6 +220,14 @@ The response has this shape:
 - `review_required`: show “Manual classification required”.
 
 The suggestion is not the final operator decision. The operator must explicitly select a decision.
+
+### Show the evidence
+
+`report_photo_url` / `report_audio_url` are `null` unless the citizen
+actually submitted that kind of evidence and the upstream service durably
+persisted it to object storage - render an `<img>`/`<audio>` element when
+present, and hide the control entirely when `null` rather than showing a
+broken link.
 
 ### Submit a decision
 

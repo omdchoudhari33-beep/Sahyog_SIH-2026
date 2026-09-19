@@ -1,6 +1,7 @@
 import json
 import base64
 import requests
+from config import settings
 from schemas import VisualEvidence, ProcessingEngine
 
 def audit_vision_evidence(image_path: str, complaint_text: str) -> VisualEvidence:
@@ -9,14 +10,18 @@ def audit_vision_evidence(image_path: str, complaint_text: str) -> VisualEvidenc
         with open(image_path, "rb") as image_file:
             encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
     except Exception as e:
+        print(f"C3 Vision Failure (image read): {e}")
+        # discrepancy_notes is shown directly to the citizen (see
+        # 4.Orchestrator's conversation_photo) - never put a raw exception
+        # there, only a safe generic message.
         return VisualEvidence(
             image_analyzed=False,
-            detailed_visual_analysis="System Error: Could not read image file.",
-            discrepancy_notes=str(e),
+            detailed_visual_analysis="Could not read the uploaded image.",
+            discrepancy_notes="Automatic photo verification is temporarily unavailable - flagged for human review.",
             confidence=0.0
         )
 
-    url = "http://localhost:11434/api/generate"
+    url = f"{settings.OLLAMA_BASE_URL}/api/generate"
     
     prompt = f"""
     Analyze this image against the following citizen complaint: "{complaint_text}"
@@ -88,7 +93,7 @@ def audit_vision_evidence(image_path: str, complaint_text: str) -> VisualEvidenc
         return VisualEvidence(
             image_analyzed=False,
             detailed_visual_analysis="AI Processing Failed.",
-            discrepancy_notes=str(e),
+            discrepancy_notes="Automatic photo verification is temporarily unavailable - flagged for human review.",
             confidence=0.0,
             engine_used=ProcessingEngine.LOCAL_OLLAMA
         )

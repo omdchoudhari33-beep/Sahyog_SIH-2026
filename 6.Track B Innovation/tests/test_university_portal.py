@@ -1,10 +1,11 @@
+import io
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.db import get_db
-from app.main import app
+from app.main import _location_cell, _problem_cell, _upload_solution_document, app
 
 
 def test_university_login_form_loads():
@@ -123,6 +124,7 @@ def test_nodal_decision_json_accepts_correct_token_and_shares_nodal_decide(monke
     fake_proposal = MagicMock(
         id=1, team_id=1, ticket_id=1, title="T", summary="S", requested_budget=None,
         timeline_weeks=None, status="approved", nodal_officer_id="x", nodal_notes=None,
+        solution_document_media_id=None, solution_document_url=None,
         submitted_at="2026-09-16T00:00:00Z", decided_at="2026-09-16T00:00:00Z",
     )
     with patch("app.main.nodal_decide", return_value=fake_proposal) as mock_decide:
@@ -136,3 +138,63 @@ def test_nodal_decision_json_accepts_correct_token_and_shares_nodal_decide(monke
             app.dependency_overrides.clear()
     assert response.status_code == 200
     mock_decide.assert_called_once_with(fake_db, 1, "approved", "x", "ok")
+
+
+def test_problem_cell_shows_statement_and_photo():
+    info = {
+        "standardized_problem_statement": "Pothole near the market",
+        "domain": "ROADS_BRIDGES", "photo_bucket": "sahyog-images", "photo_object_key": "x.jpg",
+    }
+    html = _problem_cell(info)
+    assert "Pothole near the market" in html
+    assert "Roads Bridges" in html
+    assert "<img" in html
+
+
+def test_problem_cell_handles_missing_ticket_info():
+    assert "—" in _problem_cell(None)
+
+
+def test_location_cell_falls_back_to_coordinates_when_geocoding_fails(monkeypatch):
+    monkeypatch.setattr("app.main.reverse_geocode", lambda lat, lon: None)
+    html = _location_cell({"latitude": 23.34, "longitude": 85.31})
+    assert "23.34000" in html
+    assert "google.com/maps" in html
+
+
+def test_location_cell_uses_resolved_place_name(monkeypatch):
+    monkeypatch.setattr("app.main.reverse_geocode", lambda lat, lon: "Kanke, Ranchi, Jharkhand")
+    html = _location_cell({"latitude": 23.34, "longitude": 85.31})
+    assert "Kanke, Ranchi, Jharkhand" in html
+
+
+def test_location_cell_handles_missing_coordinates():
+    assert "Not available" in _location_cell({"latitude": None, "longitude": None})
+
+
+def test_upload_solution_document_returns_none_when_no_file():
+    assert _upload_solution_document(None) is None
+
+
+def test_upload_solution_document_stores_pdf_and_returns_media_id():
+    fake_file = MagicMock()
+    fake_file.filename = "solution.pdf"
+    fake_file.content_type = "application/pdf"
+    fake_file.file = io.BytesIO(b"%PDF-1.4 fake pdf bytes")
+
+    with patch("app.main.storage") as mock_storage:
+        mock_storage.build_object_key.return_value = "proposal-solutions/2026/09/18/abc.pdf"
+        mock_storage.upload.return_value = MagicMock(media_id=42)
+        media_id = _upload_solution_document(fake_file)
+
+    assert media_id == 42
+    mock_storage.upload.assert_called_once()
+
+
+def test_upload_solution_document_fails_soft_on_storage_error():
+    fake_file = MagicMock()
+    fake_file.filename = "solution.pdf"
+    fake_file.file = io.BytesIO(b"data")
+    with patch("app.main.storage") as mock_storage:
+        mock_storage.upload.side_effect = Exception("MinIO unreachable")
+        assert _upload_solution_document(fake_file) is None

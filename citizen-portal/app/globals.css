@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-gov-blue-50 text-gray-900 font-sans;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-serif;
+  }
+
+  /* Visible focus ring everywhere, not just default browser outline -
+     required for keyboard/assistive-tech users on a government portal. */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-gov-orange-600;
+  }
+}
+
+@layer components {
+  .gov-card {
+    @apply bg-white border border-gov-blue-100 rounded-lg;
+  }
+
+  .gov-label {
+    @apply block text-sm font-medium text-gov-blue-800 mb-1;
+  }
+
+  .gov-input {
+    @apply w-full rounded-md border border-gov-blue-200 bg-white px-3 py-2 text-base text-gray-900 placeholder:text-gray-400 focus:border-gov-blue-500 focus:ring-1 focus:ring-gov-blue-500;
+  }
+
+  .gov-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-gov-blue-700 px-5 py-2.5 font-medium text-white transition-colors hover:bg-gov-blue-800 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .gov-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-gov-blue-700 bg-white px-5 py-2.5 font-medium text-gov-blue-700 transition-colors hover:bg-gov-blue-50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .gov-btn-accent {
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-gov-orange-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-gov-orange-700 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+}

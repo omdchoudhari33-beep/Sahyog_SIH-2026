@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
-import uuid
 from typing import Optional
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -14,9 +12,10 @@ from sqlalchemy.orm import Session
 from app.closure import verify_pilot
 from app.config import settings
 from app.db import Proposal, get_db
-from app.disposition import apply_disposition
+from app.storage import storage
+from app.disposition import apply_disposition, record_patent
 from app.milestones import evaluate_milestone, get_milestones, initialize_milestones, reconcile as reconcile_milestones
-from app.schemas import DispositionRequest, LifecycleAck, MilestoneOut, PilotValidationOut, ReconcileResult
+from app.schemas import DispositionRequest, LifecycleAck, MilestoneOut, PatentFilingRequest, PatentRecordOut, PilotValidationOut, ReconcileResult
 
 logger = logging.getLogger("lifecycle_outcome")
 
@@ -56,19 +55,18 @@ def lifecycle_entry(proposal_id: int, db: Session = Depends(get_db)):
     return LifecycleAck(**result)
 
 
-@app.get("/lifecycle/{ticket_id}", response_model=list[MilestoneOut], dependencies=[Depends(require_internal_token)])
-def get_lifecycle_status(ticket_id: int, db: Session = Depends(get_db)):
-    proposal = db.query(Proposal).filter(Proposal.ticket_id == ticket_id).one_or_none()
-    if proposal is None:
-        raise HTTPException(status_code=404, detail=f"no proposal found for ticket {ticket_id}")
-    milestones = get_milestones(db, proposal.id)
-    return [MilestoneOut.model_validate(m) for m in milestones]
-
-
 # ---------------------------------------------------------------------------
 # Admin Portal proxy targets (4.Orchestrator calls these server-side - see
 # 6.Track B Innovation/app/main.py's equivalent section for the full
 # rationale on internal-auth vs HTTPBasic here).
+#
+# GET /lifecycle/pending-dispositions is registered BEFORE
+# GET /lifecycle/{ticket_id} - Starlette matches routes in registration
+# order, and {ticket_id} would otherwise greedily match the literal path
+# segment "pending-dispositions" first (as a to-be-rejected int) and shadow
+# this route entirely - same class of bug as 5.ULB Dispatch's
+# /dispatch/reconcile vs /dispatch/{ticket_id} lesson, caught live this
+# time by an actual Admin Portal click producing a 422 int-parsing error.
 # ---------------------------------------------------------------------------
 
 @app.get("/lifecycle/pending-dispositions", dependencies=[Depends(require_internal_token)])
@@ -90,6 +88,15 @@ def pending_dispositions(db: Session = Depends(get_db)):
     return [dict(r) for r in rows]
 
 
+@app.get("/lifecycle/{ticket_id}", response_model=list[MilestoneOut], dependencies=[Depends(require_internal_token)])
+def get_lifecycle_status(ticket_id: int, db: Session = Depends(get_db)):
+    proposal = db.query(Proposal).filter(Proposal.ticket_id == ticket_id).one_or_none()
+    if proposal is None:
+        raise HTTPException(status_code=404, detail=f"no proposal found for ticket {ticket_id}")
+    milestones = get_milestones(db, proposal.id)
+    return [MilestoneOut.model_validate(m) for m in milestones]
+
+
 @app.post("/lifecycle/{ticket_id}/disposition", dependencies=[Depends(require_internal_token)])
 def lifecycle_disposition_json(ticket_id: int, body: DispositionRequest, db: Session = Depends(get_db)):
     """JSON-body internal-auth equivalent of POST /admin/{ticket_id}/disposition
@@ -100,6 +107,21 @@ def lifecycle_disposition_json(ticket_id: int, body: DispositionRequest, db: Ses
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return result
+
+
+@app.post("/lifecycle/{ticket_id}/patent", response_model=PatentRecordOut, dependencies=[Depends(require_internal_token)])
+def lifecycle_patent_json(ticket_id: int, body: PatentFilingRequest, db: Session = Depends(get_db)):
+    """JSON-body internal-auth equivalent of POST /admin/{ticket_id}/patent
+    - same record_patent() call as the HTTPBasic form, so the two entry
+    points can never drift out of sync."""
+    try:
+        record = record_patent(
+            db, ticket_id, body.proposal_id, body.title, body.applicant_names,
+            body.filing_status, body.application_number, body.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return PatentRecordOut.model_validate(record)
 
 
 # ---------------------------------------------------------------------------
@@ -155,14 +177,22 @@ async def admin_pilot_validate(
     raw = await photo.read()
     _validate_photo_bytes(raw)
 
-    os.makedirs("pilot_uploads", exist_ok=True)
-    ext = ".jpg" if raw.startswith(_JPEG_MAGIC) else ".png"
-    photo_path = os.path.join("pilot_uploads", f"{uuid.uuid4().hex}{ext}")
-    with open(photo_path, "wb") as fh:
-        fh.write(raw)
+    content_type = "image/jpeg" if raw.startswith(_JPEG_MAGIC) else "image/png"
+    object_key = storage.build_object_key("pilot-validations", photo.filename, default_ext=".jpg")
+    uploaded = storage.upload(
+        raw,
+        media_type="image",
+        content_type=content_type,
+        object_key=object_key,
+        original_filename=photo.filename,
+        capture_lat=photo_lat,
+        capture_lon=photo_lon,
+    )
 
     try:
-        validation = verify_pilot(db, ticket_id, proposal_id, photo_path, photo_lat, photo_lon)
+        validation = verify_pilot(
+            db, ticket_id, proposal_id, raw, uploaded.url, uploaded.media_id, photo_lat, photo_lon,
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     return PilotValidationOut.model_validate(validation)
@@ -179,3 +209,18 @@ def admin_disposition(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return result
+
+
+@app.post("/admin/{ticket_id}/patent", response_model=PatentRecordOut, dependencies=[Depends(require_admin_password)])
+def admin_patent(
+    ticket_id: int, proposal_id: int = Form(...), title: str = Form(...),
+    applicant_names: str = Form(default=""), filing_status: str = Form(default="filed"),
+    application_number: Optional[str] = Form(default=None), notes: Optional[str] = Form(default=None),
+    db: Session = Depends(get_db),
+):
+    names = [n.strip() for n in applicant_names.split(",") if n.strip()]
+    try:
+        record = record_patent(db, ticket_id, proposal_id, title, names, filing_status, application_number, notes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return PatentRecordOut.model_validate(record)

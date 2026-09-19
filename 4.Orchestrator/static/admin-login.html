@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SAHYOG - Admin Sign-in</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230b3d66'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle'%3E%F0%9F%A4%9D%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<header class="top">
+  <div style="max-width: 420px;">
+    <div class="brand">
+      <div class="brand-mark">⚙️</div>
+      <div>
+        <h1>Admin Sign-in</h1>
+        <div class="tag">One login, every track - Track A, Track B, Industry, Lifecycle, Transparency</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap" style="max-width: 420px;">
+  <div id="error" class="error-box"></div>
+
+  <div class="card">
+    <form id="login-form">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" type="text" autocomplete="username" value="admin" />
+      </div>
+      <div class="field">
+        <label for="password">Admin portal password</label>
+        <input id="password" type="password" autocomplete="current-password" required />
+      </div>
+      <button id="submit" class="primary" type="submit">Sign in</button>
+    </form>
+  </div>
+
+  <p class="hint center">
+    Real credential check against this same Orchestrator's HTTPBasic admin gate - the
+    same trust boundary that already protects <code>/api/tickets*</code> and
+    <code>/api/admin/*</code>. Not a separate account system: one shared admin
+    password, same as the DNO queue and unified Admin Portal below it.
+  </p>
+</div>
+
+<script>
+// This page exists so signing in reads like the rest of SAHYOG's styled
+// portals instead of the browser's own native Basic-Auth popup (which
+// /admin and /dashboard still fall back to if opened directly without ever
+// visiting this page first - unchanged, nothing here removes that).
+// The trick: an HTTP Basic credential sent by *any* request (fetch, XHR, or
+// the native popup) to a given origin+realm gets cached by the browser for
+// that whole protection space, then reused automatically on subsequent
+// requests to it - including a plain navigation. So verifying the password
+// here via fetch(), then navigating to `next`, arrives already
+// authenticated, no popup shown.
+const form = document.getElementById("login-form");
+const errorBox = document.getElementById("error");
+const submitBtn = document.getElementById("submit");
+
+function nextUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const next = params.get("next");
+  return next && next.startsWith("/") ? next : "/admin";
+}
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = document.getElementById("username").value || "admin";
+  const password = document.getElementById("password").value;
+  errorBox.style.display = "none";
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Signing in...";
+  try {
+    const res = await fetch(nextUrl(), {
+      headers: { Authorization: "Basic " + btoa(username + ":" + password) },
+    });
+    if (res.ok) {
+      window.location.href = nextUrl();
+      return;
+    }
+    errorBox.textContent = res.status === 401 ? "Incorrect password. Please try again." : `Server error (${res.status}). Please try again.`;
+    errorBox.style.display = "block";
+  } catch {
+    errorBox.textContent = "Could not reach the server. Please check your connection and try again.";
+    errorBox.style.display = "block";
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Sign in";
+  }
+});
+</script>
+</body>
+</html>

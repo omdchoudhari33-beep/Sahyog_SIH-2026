@@ -24,6 +24,20 @@ class Settings:
     STATUS_LINK_BASE_URL: str = os.getenv("STATUS_LINK_BASE_URL", "http://localhost:8006")
     MATCH_TOKEN_TTL_HOURS: int = int(os.getenv("MATCH_TOKEN_TTL_HOURS", "168"))
     MAX_HEI_MATCH_ATTEMPTS: int = int(os.getenv("MAX_HEI_MATCH_ATTEMPTS", "5"))
+    # Same object storage endpoint 9.Transparency Layer resolves media_objects
+    # against - reused as-is to render the citizen's report photo inside the
+    # broadcast brief (see app/brief.py). Full upload credentials (below)
+    # are new - this service only ever read media_objects before; now it
+    # also writes to it, for a university's uploaded solution PDF (see
+    # app/object_storage.py / app/storage.py).
+    S3_ENDPOINT_URL: str = os.getenv("S3_ENDPOINT_URL", "http://localhost:9000")
+    S3_PUBLIC_BASE_URL: str = os.getenv("S3_PUBLIC_BASE_URL", "http://localhost:9000")
+    S3_ACCESS_KEY: str = os.getenv("S3_ACCESS_KEY", "sahyog")
+    S3_SECRET_KEY: str = os.getenv("S3_SECRET_KEY", "sahyog-dev-secret")
+    S3_REGION: str = os.getenv("S3_REGION", "us-east-1")
+    S3_USE_SSL: bool = os.getenv("S3_USE_SSL", "false").lower() == "true"
+    S3_BUCKET_DOCUMENTS: str = os.getenv("S3_BUCKET_DOCUMENTS", "sahyog-documents")
+    BROADCAST_TOP_N: int = int(os.getenv("BROADCAST_TOP_N", "10"))
 
     INDUSTRY_PARTNERSHIP_BASE_URL: str = os.getenv("INDUSTRY_PARTNERSHIP_BASE_URL", "http://localhost:8007")
     LIFECYCLE_OUTCOME_BASE_URL: str = os.getenv("LIFECYCLE_OUTCOME_BASE_URL", "http://localhost:8008")

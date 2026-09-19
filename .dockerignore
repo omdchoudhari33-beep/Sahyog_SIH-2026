@@ -1,0 +1,13 @@
+# Only the postgres build (context: repo root, for Dockerfile.postgres to
+# reach every service's schema*.sql) uses this - keeps that build context
+# small instead of sending every service's .venv/node_modules to the daemon.
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/node_modules
+**/.next
+**/.git
+**/.vs
+logs
+UPDATED AGENTS

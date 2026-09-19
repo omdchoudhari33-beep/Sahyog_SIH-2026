@@ -28,5 +28,17 @@ class Settings:
     PRIORITY_AGE_HOURS_WEIGHT: float = float(os.getenv("PRIORITY_AGE_HOURS_WEIGHT", "0.1"))
     PRIORITY_POPULATION_IMPACT_WEIGHT: float = float(os.getenv("PRIORITY_POPULATION_IMPACT_WEIGHT", "1.0"))
 
+    # Object storage (MinIO / any S3-compatible endpoint) - this service only
+    # ever READS media_objects rows (to build a URL for the DNO dashboard),
+    # it never uploads anything itself, so it needs no access keys, just the
+    # public base URL the "sahyog-audio"/"sahyog-images" buckets are served
+    # from. See "3.Triage and route/schema_003_media_objects.sql" and the
+    # object_storage.py module in the services that DO upload (1, 2, 5, 8).
+    S3_PUBLIC_BASE_URL: str = os.getenv("S3_PUBLIC_BASE_URL", "http://localhost:9000")
+
+    # Comma-separated list of origins allowed to call this service from a
+    # browser (CORS). Defaults to the local citizen-portal dev server.
+    FRONTEND_ORIGINS: str = os.getenv("FRONTEND_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+
 
 settings = Settings()

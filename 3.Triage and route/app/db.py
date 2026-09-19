@@ -21,6 +21,29 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
 
+class MediaObject(Base):
+    """Object storage registry row (MinIO / S3-compatible). Created by
+    whichever service's upload path persisted the file - this service only
+    reads it (to join against active_tickets.report_*_media_id), it never
+    inserts rows itself."""
+
+    __tablename__ = "media_objects"
+
+    id = Column(BigInteger, primary_key=True)
+    media_type = Column(Text, nullable=False)
+    bucket = Column(Text, nullable=False)
+    object_key = Column(Text, nullable=False)
+    content_type = Column(Text, nullable=False)
+    size_bytes = Column(BigInteger, nullable=False)
+    checksum_sha256 = Column(Text)
+    original_filename = Column(Text)
+    capture_lat = Column(Float)
+    capture_lon = Column(Float)
+    exif_captured_at = Column(DateTime(timezone=True))
+    uploaded_by_service = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class ActiveTicket(Base):
     __tablename__ = "active_tickets"
 
@@ -38,6 +61,8 @@ class ActiveTicket(Base):
     geom = Column(Geometry(geometry_type="POINT", srid=4326), nullable=False)
     embedding = Column(Vector(settings.EMBEDDING_DIM), nullable=False)
     raw_evidence = Column(JSON)
+    report_photo_media_id = Column(BigInteger, ForeignKey("media_objects.id"), nullable=True)
+    report_audio_media_id = Column(BigInteger, ForeignKey("media_objects.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

@@ -5,7 +5,8 @@ from typing import Literal, Optional
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -19,14 +20,22 @@ from app.clients import (
     call_agent2_attach_photo,
     call_agent3_ingest,
     decide_nodal_proposal,
+    decide_trackb_match,
+    form_trackb_team,
+    get_agent3_ticket,
     get_transparency_dashboard,
     list_agent3_tickets,
     list_fund_ledgers,
     list_pending_dispositions,
+    list_pending_matches,
     list_pending_proposals,
     list_track_a_dispatches,
+    list_trackb_broadcast,
+    recalculate_agent3_priority,
+    record_patent,
     release_ledger_funds,
     submit_agent3_decision,
+    submit_trackb_proposal,
     upload_audio_to_agent1,
 )
 from app.config import settings
@@ -38,6 +47,16 @@ from app.schemas import PipelineResult
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 app = FastAPI(title=settings.app_name)
+# Lets the citizen-portal Next.js app call this service straight from the
+# browser, in addition to the static pages this service already serves
+# itself (same-origin, unaffected by this). Origins come from
+# FRONTEND_ORIGINS (comma-separated, defaults to the local dev server).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.frontend_origins.split(",") if o.strip()],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("shutdown")
@@ -67,9 +86,13 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/")
-def serve_citizen_form():
-    return FileResponse(STATIC_DIR / "index.html")
+@app.get("/", include_in_schema=False)
+def root():
+    # The built-in static wizard (former static/index.html + app.js) was
+    # removed - citizen-portal (the Next.js app) is now the only
+    # citizen-facing frontend. Same "/" -> "/docs" convention every other
+    # service in this repo already uses (this was the one exception).
+    return RedirectResponse(url="/docs")
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +117,20 @@ def serve_operator_dashboard():
     return FileResponse(STATIC_DIR / "dashboard.html")
 
 
+@app.get("/admin/login", include_in_schema=False)
+def serve_admin_login():
+    """Public (no admin_portal_password dependency, on purpose - this is the
+    login screen itself). Real auth still happens server-side against
+    admin_portal_password above, exactly as before - this only replaces the
+    browser's bare native Basic-Auth popup with a styled page that matches
+    the rest of SAHYOG (see admin-login.html's own comment for how the
+    fetch()-then-navigate trick avoids ever showing that popup). /admin and
+    /dashboard still work unauthenticated-first too, falling back to that
+    native popup exactly as they always have - nothing here changes their
+    own behavior."""
+    return FileResponse(STATIC_DIR / "admin-login.html")
+
+
 class DecisionPayload(BaseModel):
     decision: Literal["track_a", "track_b", "reject_merge"]
     operator_id: Optional[str] = None
@@ -105,6 +142,17 @@ async def api_list_tickets(limit: int = 50, offset: int = 0):
     """Dashboard proxy: keeps Agent 3 off the public network, browser only talks to us."""
     try:
         return await list_agent3_tickets(limit, offset)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Agent 3 unavailable: {exc}") from exc
+
+
+@app.get("/api/tickets/{ticket_id}", dependencies=[Depends(require_admin_portal_password)])
+async def api_get_ticket(ticket_id: int):
+    """Operator ticket detail proxy - same trust boundary as api_list_tickets above."""
+    try:
+        return await get_agent3_ticket(ticket_id)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Agent 3 unavailable: {exc}") from exc
 
@@ -140,6 +188,16 @@ async def api_submit_decision(ticket_id: int, payload: DecisionPayload):
         raise HTTPException(
             status_code=exc.response.status_code, detail=exc.response.text
         ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Agent 3 unavailable: {exc}") from exc
+
+
+@app.post("/api/tickets/{ticket_id}/recalculate", dependencies=[Depends(require_admin_portal_password)])
+async def api_recalculate_ticket(ticket_id: int):
+    try:
+        return await recalculate_agent3_priority(ticket_id)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Agent 3 unavailable: {exc}") from exc
 
@@ -193,6 +251,76 @@ async def admin_track_b_decide(proposal_id: int, payload: NodalDecisionPayload):
         raise _proxy_error("6.Track B Innovation", exc) from exc
 
 
+@app.get("/api/admin/track-b/matches", dependencies=[Depends(require_admin_portal_password)])
+async def admin_track_b_matches():
+    try:
+        return await list_pending_matches()
+    except Exception as exc:
+        raise _proxy_error("6.Track B Innovation", exc) from exc
+
+
+class MatchDecisionPayload(BaseModel):
+    decision: Literal["accept", "decline"]
+    reason: Optional[str] = None
+
+
+@app.post("/api/admin/track-b/matches/{match_id}/decide", dependencies=[Depends(require_admin_portal_password)])
+async def admin_track_b_decide_match(match_id: int, payload: MatchDecisionPayload):
+    try:
+        return await decide_trackb_match(match_id, payload.decision, payload.reason)
+    except Exception as exc:
+        raise _proxy_error("6.Track B Innovation", exc) from exc
+
+
+class TeamFormPayload(BaseModel):
+    team_name: str
+    faculty_mentor_name: str
+    faculty_mentor_email: str
+    student_names: list[str] = []
+
+
+@app.post("/api/admin/track-b/matches/{match_id}/team", dependencies=[Depends(require_admin_portal_password)])
+async def admin_track_b_form_team(match_id: int, payload: TeamFormPayload):
+    try:
+        return await form_trackb_team(
+            match_id, payload.team_name, payload.faculty_mentor_name, payload.faculty_mentor_email, payload.student_names
+        )
+    except Exception as exc:
+        raise _proxy_error("6.Track B Innovation", exc) from exc
+
+
+@app.post("/api/admin/track-b/matches/{match_id}/proposal", dependencies=[Depends(require_admin_portal_password)])
+async def admin_track_b_submit_proposal(
+    match_id: int,
+    title: str = Form(...),
+    summary: str = Form(...),
+    requested_budget: Optional[float] = Form(default=None),
+    timeline_weeks: Optional[int] = Form(default=None),
+    solution_document: Optional[UploadFile] = File(default=None),
+):
+    solution_bytes = await solution_document.read() if solution_document is not None and solution_document.filename else None
+    try:
+        return await submit_trackb_proposal(
+            match_id,
+            title,
+            summary,
+            requested_budget=requested_budget,
+            timeline_weeks=timeline_weeks,
+            solution_document_bytes=solution_bytes,
+            solution_document_filename=solution_document.filename if solution_bytes is not None else None,
+        )
+    except Exception as exc:
+        raise _proxy_error("6.Track B Innovation", exc) from exc
+
+
+@app.get("/api/admin/track-b/{ticket_id}/broadcast", dependencies=[Depends(require_admin_portal_password)])
+async def admin_track_b_broadcast(ticket_id: int):
+    try:
+        return await list_trackb_broadcast(ticket_id)
+    except Exception as exc:
+        raise _proxy_error("6.Track B Innovation", exc) from exc
+
+
 @app.get("/api/admin/industry/ledgers", dependencies=[Depends(require_admin_portal_password)])
 async def admin_industry_ledgers():
     try:
@@ -241,6 +369,26 @@ async def admin_lifecycle_disposition(ticket_id: int, payload: DispositionPayloa
         raise _proxy_error("8.Lifecycle Outcome", exc) from exc
 
 
+class PatentPayload(BaseModel):
+    proposal_id: int
+    title: str
+    applicant_names: list[str] = []
+    filing_status: Literal["filed", "published", "granted", "abandoned"] = "filed"
+    application_number: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@app.post("/api/admin/lifecycle/{ticket_id}/patent", dependencies=[Depends(require_admin_portal_password)])
+async def admin_lifecycle_patent(ticket_id: int, payload: PatentPayload):
+    try:
+        return await record_patent(
+            ticket_id, payload.proposal_id, payload.title, payload.applicant_names,
+            payload.filing_status, payload.application_number, payload.notes,
+        )
+    except Exception as exc:
+        raise _proxy_error("8.Lifecycle Outcome", exc) from exc
+
+
 @app.get("/api/admin/transparency", dependencies=[Depends(require_admin_portal_password)])
 async def admin_transparency():
     try:
@@ -274,14 +422,17 @@ async def submit_report(
 
     request_id = str(uuid.uuid4())
 
+    report_audio_media_id = None
     if audio and not local_audio_path:
         audio_bytes = await audio.read()
         try:
-            local_audio_path = await upload_audio_to_agent1(audio_bytes, audio.filename)
+            upload_result = await upload_audio_to_agent1(audio_bytes, audio.filename)
         except Exception as exc:
             raise HTTPException(
                 status_code=502, detail=f"Agent 1 audio upload failed: {exc}"
             ) from exc
+        local_audio_path = upload_result["local_audio_path"]
+        report_audio_media_id = upload_result.get("media_id")
 
     input_type = "audio" if local_audio_path else "text"
 
@@ -352,12 +503,15 @@ async def submit_report(
         )
 
     # --- S3: dedup + priority + routing suggestion ---
+    report_photo_media_id = (agent2_result.get("media") or {}).get("media_id")
     ticket_payload = build_ticket_payload(
         agent2_result["structured_evidence"],
         latitude,
         longitude,
         agent2_result,
         settings.default_population_impact,
+        report_photo_media_id=report_photo_media_id,
+        report_audio_media_id=report_audio_media_id,
     )
 
     try:
@@ -434,11 +588,13 @@ async def conversation_describe(
         audio_bytes = await audio.read()
         try:
             with _Stage("agent1 audio upload"):
-                local_audio_path = await upload_audio_to_agent1(audio_bytes, audio.filename)
+                upload_result = await upload_audio_to_agent1(audio_bytes, audio.filename)
         except Exception as exc:
             raise HTTPException(
                 status_code=502, detail=f"Agent 1 audio upload failed: {exc}"
             ) from exc
+        local_audio_path = upload_result["local_audio_path"]
+        session.report_audio_media_id = upload_result.get("media_id")
 
     input_type = "audio" if local_audio_path else "text"
 
@@ -451,10 +607,53 @@ async def conversation_describe(
                 local_audio_path=local_audio_path,
                 source_language=source_language,
             )
+    except httpx.HTTPStatusError as exc:
+        if 400 <= exc.response.status_code < 500 and input_type == "audio":
+            # The only 4xx Agent1's webhook raises for audio input is
+            # UnsupportedAsrLanguageError (see its media/pipeline.py) -
+            # there's no speech-to-text model for this language at all, so
+            # retrying won't help. Tell the citizen exactly that instead of
+            # a generic "something went wrong" (which invites a useless retry).
+            raise HTTPException(
+                status_code=422,
+                detail="Voice recording isn't available in this language yet. Please type your report instead, or switch language above.",
+            ) from exc
+        raise HTTPException(
+            status_code=502, detail=f"Agent 1 (language normalizer) failed: {exc}"
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=502, detail=f"Agent 1 (language normalizer) failed: {exc}"
         ) from exc
+
+    # A text report in a language Bhashini has no translation/classification
+    # model for at all (e.g. Santali) - Agent1 already detected this (see
+    # its webhook.py) and deliberately did NOT attempt translation. Skip
+    # Agent2/the LLM classifier entirely rather than feeding it a script it
+    # almost certainly can't read - go straight to human review with the
+    # citizen's own original text preserved verbatim.
+    if input_type == "text" and agent1_result.get("status") == "review_required":
+        original_text = agent1_result.get("standardized_text") or text
+        session.normalized_english = original_text
+        session.structured_evidence = {
+            "normalized_english": original_text,
+            "civic_domain": "OTHER_MUNICIPAL",
+            "severity": "LOW",
+            "suggested_track": "UNSURE",
+            "confidence": 0.0,
+            "is_actionable": False,
+            "rationale": "Automatic translation/classification is not yet available in this language - flagged for human review.",
+        }
+        return {
+            "session_id": session.session_id,
+            "state": session.state,
+            "understood_statement": original_text,
+            "domain": None,
+            "severity": None,
+            "suggested_track": "UNSURE",
+            "warning": "Automatic AI understanding isn't available in this language yet - your report will still be submitted and reviewed by a person, with your original text kept exactly as written.",
+            "message": "Your report has been recorded as written. Since automatic translation isn't available in this language, a human reviewer will read it directly.",
+        }
 
     # Low ASR confidence doesn't hard-fail here - the transcript (however
     # rough) is shown back to the citizen at the confirm step, where they
@@ -577,6 +776,7 @@ async def conversation_photo(
 
     session.visual_evidence = visual
     session.geolocation = photo_result["geolocation"]
+    session.report_photo_media_id = (photo_result.get("media") or {}).get("media_id")
 
     latitude = session.geolocation.get("latitude")
     longitude = session.geolocation.get("longitude")
@@ -676,6 +876,8 @@ async def conversation_finalize(session_id: str):
             "visual_evidence": session.visual_evidence,
         },
         settings.default_population_impact,
+        report_photo_media_id=session.report_photo_media_id,
+        report_audio_media_id=session.report_audio_media_id,
     )
 
     try:

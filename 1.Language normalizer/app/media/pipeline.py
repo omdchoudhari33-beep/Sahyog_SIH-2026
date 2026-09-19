@@ -88,11 +88,13 @@ def transcribe_with_cleanup(
     input_path: Path | str, source_language: str | None = None
 ) -> ASRResult:
     """
-    Bhashini ASR is the only speech-to-text engine (no local Whisper
-    fallback) - a language it doesn't cover (see ASR_SERVICE_IDS, e.g.
-    Santali) or a failed Bhashini call means this raises instead of
-    transcribing, so callers must treat audio input as unavailable rather
-    than silently degraded when that happens.
+    Bhashini ASR is the primary speech-to-text engine, except for Santali
+    ("sat") - Bhashini has no model for it at all, so that one language is
+    routed to a self-hosted alternative instead (see
+    app/services/santali_local.py). Any other language Bhashini doesn't
+    cover (see ASR_SERVICE_IDS) or a failed Bhashini call means this
+    raises instead of transcribing, so callers must treat audio input as
+    unavailable rather than silently degraded when that happens.
     """
     input_path = Path(input_path)
     normalized = None
@@ -101,6 +103,16 @@ def transcribe_with_cleanup(
         wav_bytes = normalized.read_bytes()
 
         lang_code = bhashini.resolve_language_code(source_language)
+
+        if lang_code == "sat":
+            from app.services import santali_local
+
+            try:
+                transcript, confidence = santali_local.transcribe_santali(wav_bytes)
+            except santali_local.SantaliLocalError as exc:
+                raise AsrFailedError(str(exc)) from exc
+            return ASRResult(transcript=transcript, language="sat", confidence=confidence)
+
         if lang_code not in bhashini.ASR_SERVICE_IDS:
             raise UnsupportedAsrLanguageError(
                 f"Bhashini ASR does not support language '{source_language}' "

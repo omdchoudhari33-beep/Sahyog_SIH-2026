@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     ForeignKey,
+    JSON,
     DateTime,
     func,
 )
@@ -75,6 +76,7 @@ class PilotValidation(Base):
     ticket_id = Column(BigInteger, ForeignKey("active_tickets.id"), nullable=False)
     proposal_id = Column(BigInteger, nullable=False)
     photo_url = Column(Text, nullable=False)
+    photo_media_id = Column(BigInteger, ForeignKey("media_objects.id"), nullable=True)
     photo_lat = Column(Float)
     photo_lon = Column(Float)
     geo_check_passed = Column(Boolean)
@@ -103,6 +105,22 @@ class SpinoutRecord(Base):
     incubator_name = Column(Text)
     notes = Column(Text)
     spun_out_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class PatentRecord(Base):
+    __tablename__ = "patent_records"
+
+    id = Column(BigInteger, primary_key=True)
+    ticket_id = Column(BigInteger, ForeignKey("active_tickets.id"), nullable=False)
+    proposal_id = Column(BigInteger, nullable=False)
+    title = Column(Text, nullable=False)
+    applicant_names = Column(JSON, nullable=False, default=list)
+    filing_status = Column(Text, nullable=False, default="filed")
+    application_number = Column(Text)
+    filed_at = Column(DateTime(timezone=True), nullable=True)
+    granted_at = Column(DateTime(timezone=True), nullable=True)
+    notes = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -4,69 +4,66 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>SAHYOG - Admin Portal</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230b3d66'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle'%3E%F0%9F%A4%9D%3C/text%3E%3C/svg%3E" />
 <link rel="stylesheet" href="/static/styles.css" />
-<style>
-  .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
-  .tabs button { padding: 8px 14px; border-radius: 8px 8px 0 0; }
-  .tabs button.active { background: var(--accent); color: var(--accent-ink); }
-  .panel { display: none; }
-  .panel.active { display: block; }
-  .stat-row { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 16px; }
-  .stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; }
-  .stat b { display: block; font-size: 20px; }
-  table.admin { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-bottom: 12px; }
-  table.admin th, table.admin td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  table.admin th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
-  table.admin input { width: 90px; padding: 4px; font-size: 12.5px; margin-right: 4px; }
-</style>
 </head>
 <body>
-<div class="wrap" style="max-width: 1100px;">
-  <header class="top">
-    <div>
-      <h1>Admin Portal</h1>
-      <div class="tag">One login, every track - Track A, Track B, Industry, Lifecycle, Transparency</div>
+<header class="top">
+  <div style="max-width: 1100px;">
+    <div class="brand">
+      <div class="brand-mark">⚙️</div>
+      <div>
+        <h1>Admin Portal</h1>
+        <div class="tag">One login, every track - Track A, Track B, Industry, Lifecycle, Transparency</div>
+      </div>
     </div>
-    <nav><a href="/dashboard">DNO Queue</a> &middot; <a href="/">Citizen form</a></nav>
-  </header>
+    <nav><a href="/dashboard">DNO Queue</a></nav>
+  </div>
+</header>
 
+<div class="wrap" style="max-width: 1100px;">
   <div id="error" class="error-box"></div>
 
-  <div class="tabs">
-    <button data-panel="track-a" class="active">Track A Dispatch</button>
-    <button data-panel="track-b">Track B Nodal Review</button>
-    <button data-panel="industry">Industry Ledger</button>
-    <button data-panel="lifecycle">Lifecycle Disposition</button>
-    <button data-panel="transparency">Transparency</button>
-  </div>
+  <div class="card" style="padding: 0; overflow: hidden;">
+    <div class="tabs" style="padding: 0 16px;">
+      <button data-panel="track-a" class="active">🚧 Track A Dispatch</button>
+      <button data-panel="track-b">🎓 Track B Nodal Review</button>
+      <button data-panel="industry">🏭 Industry Ledger</button>
+      <button data-panel="lifecycle">🔁 Lifecycle Disposition</button>
+      <button data-panel="transparency">📊 Transparency</button>
+    </div>
 
-  <div class="card">
-    <section id="panel-track-a" class="panel active">
-      <h3>Recent ULB Dispatches (Track A)</h3>
-      <table class="admin"><thead><tr><th>Ticket</th><th>Channel</th><th>Status</th><th>Correlation code</th><th>Sent</th></tr></thead><tbody id="track-a-body"></tbody></table>
-    </section>
+    <div style="padding: 6px 20px 20px;">
+      <section id="panel-track-a" class="panel active">
+        <h3>Recent ULB Dispatches (Track A)</h3>
+        <table class="admin"><thead><tr><th>Ticket</th><th>Channel</th><th>Status</th><th>Correlation code</th><th>Sent</th></tr></thead><tbody id="track-a-body"></tbody></table>
+      </section>
 
-    <section id="panel-track-b" class="panel">
-      <h3>Proposals pending nodal review</h3>
-      <table class="admin"><thead><tr><th>ID</th><th>Title</th><th>Summary</th><th>Budget</th><th>Action</th></tr></thead><tbody id="track-b-body"></tbody></table>
-    </section>
+      <section id="panel-track-b" class="panel">
+        <h3>Pending R&amp;D matches (primary + top-10 broadcast)</h3>
+        <table class="admin"><thead><tr><th>Ticket</th><th>Problem</th><th>Primary match</th><th>Confidence</th><th>Status</th><th>Broadcast</th></tr></thead><tbody id="track-b-matches-body"></tbody></table>
 
-    <section id="panel-industry" class="panel">
-      <h3>Milestone Fund Ledgers</h3>
-      <table class="admin"><thead><tr><th>ID</th><th>Proposal</th><th>Committed</th><th>Status</th><th>Release funds</th></tr></thead><tbody id="industry-body"></tbody></table>
-    </section>
+        <h3 style="margin-top:22px;">Proposals pending nodal review</h3>
+        <table class="admin"><thead><tr><th>ID</th><th>Title</th><th>Summary</th><th>Budget</th><th>Action</th></tr></thead><tbody id="track-b-body"></tbody></table>
+      </section>
 
-    <section id="panel-lifecycle" class="panel">
-      <h3>Pending dispositions (pilot passed, no outcome recorded yet)</h3>
-      <table class="admin"><thead><tr><th>Ticket</th><th>Proposal</th><th>Validated</th><th>Action</th></tr></thead><tbody id="lifecycle-body"></tbody></table>
-    </section>
+      <section id="panel-industry" class="panel">
+        <h3>Milestone Fund Ledgers</h3>
+        <table class="admin"><thead><tr><th>ID</th><th>Proposal</th><th>Committed</th><th>Status</th><th>Release funds</th></tr></thead><tbody id="industry-body"></tbody></table>
+      </section>
 
-    <section id="panel-transparency" class="panel">
-      <h3>System-wide analytics</h3>
-      <div class="stat-row" id="transparency-stats"></div>
-      <h4>District &times; Domain heatmap</h4>
-      <table class="admin"><thead><tr><th>District</th><th>Domain</th><th>Tickets</th></tr></thead><tbody id="heatmap-body"></tbody></table>
-    </section>
+      <section id="panel-lifecycle" class="panel">
+        <h3>Pending dispositions (pilot passed, no outcome recorded yet)</h3>
+        <table class="admin"><thead><tr><th>Ticket</th><th>Proposal</th><th>Validated</th><th>Action</th></tr></thead><tbody id="lifecycle-body"></tbody></table>
+      </section>
+
+      <section id="panel-transparency" class="panel">
+        <h3>System-wide analytics</h3>
+        <div class="stat-row" id="transparency-stats"></div>
+        <h4>District &times; Domain heatmap</h4>
+        <table class="admin"><thead><tr><th>District</th><th>Domain</th><th>Tickets</th></tr></thead><tbody id="heatmap-body"></tbody></table>
+      </section>
+    </div>
   </div>
 </div>
 

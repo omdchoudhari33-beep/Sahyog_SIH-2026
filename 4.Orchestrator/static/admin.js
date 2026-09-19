@@ -62,12 +62,58 @@
   }
 
   async function loadTrackB() {
+    await Promise.all([loadTrackBMatches(), loadTrackBProposals()]);
+  }
+
+  async function loadTrackBMatches() {
+    const rows = await api("/api/admin/track-b/matches");
+    const body = document.getElementById("track-b-matches-body");
+    body.innerHTML = rows.length
+      ? rows.map((m) => `
+        <tr>
+          <td>#${m.ticket_id}</td>
+          <td class="stmt">${escapeText((m.ticket_problem_statement || "").slice(0, 80))}</td>
+          <td>${escapeText(m.institution_name || `HEI #${m.hei_id}`)}</td>
+          <td>${(m.similarity_score ?? 0).toLocaleString(undefined, { style: "percent", maximumFractionDigits: 0 })}</td>
+          <td><span class="badge ${m.status === "accepted" ? "routed" : "track_b"}">${escapeText(m.status)}</span></td>
+          <td><button onclick="window.__loadBroadcast(${m.ticket_id})">Top-10 &darr;</button></td>
+        </tr>
+        <tr id="broadcast-${m.ticket_id}" class="broadcast-row" style="display:none;"><td colspan="6"></td></tr>`).join("")
+      : `<tr><td colspan="6" style="text-align:center;color:var(--muted)">No R&amp;D matches pending.</td></tr>`;
+  }
+
+  window.__loadBroadcast = async (ticketId) => {
+    const row = document.getElementById(`broadcast-${ticketId}`);
+    const cell = row.querySelector("td");
+    if (row.style.display !== "none") {
+      row.style.display = "none";
+      return;
+    }
+    row.style.display = "";
+    cell.textContent = "Loading...";
+    try {
+      const notices = await api(`/api/admin/track-b/${ticketId}/broadcast`);
+      cell.innerHTML = notices.length
+        ? `<table class="admin"><thead><tr><th>Rank</th><th>Institution</th><th>Confidence</th><th>Match status</th><th>Sent</th></tr></thead><tbody>${notices
+            .map(
+              (n) => `<tr><td>#${n.rank}</td><td>${escapeText(n.institution_name)}</td><td>${(n.similarity_score ?? 0).toLocaleString(undefined, { style: "percent", maximumFractionDigits: 0 })}</td><td>${escapeText(n.match_status || "broadcast only")}</td><td>${new Date(n.sent_at).toLocaleDateString()}</td></tr>`
+            )
+            .join("")}</tbody></table>`
+        : `<span style="color:var(--muted)">No broadcast sent yet for this ticket.</span>`;
+    } catch (err) {
+      cell.textContent = err.message;
+    }
+  };
+
+  async function loadTrackBProposals() {
     const rows = await api("/api/admin/track-b/pending");
     const body = document.getElementById("track-b-body");
     body.innerHTML = rows.length
       ? rows.map((p) => `
         <tr>
-          <td>${p.id}</td><td>${escapeText(p.title)}</td><td>${escapeText((p.summary || "").slice(0, 80))}</td><td>${p.requested_budget ?? "-"}</td>
+          <td>${p.id}</td>
+          <td>${escapeText(p.title)}${p.solution_document_url ? `<br><a href="${p.solution_document_url}" target="_blank" rel="noopener">📄 Solution PDF</a>` : ""}</td>
+          <td>${escapeText((p.summary || "").slice(0, 80))}</td><td>${p.requested_budget ?? "-"}</td>
           <td>
             <input class="officer-id" placeholder="your id" data-id="${p.id}">
             <button onclick="window.__decideProposal(${p.id}, 'approved')">Approve</button>
@@ -126,6 +172,7 @@
           <td>
             <button onclick="window.__disposition(${r.ticket_id}, ${r.proposal_id}, 'handover')">Handover to ULB</button>
             <button onclick="window.__disposition(${r.ticket_id}, ${r.proposal_id}, 'spinout')">Spin out</button>
+            <button onclick="window.__recordPatent(${r.ticket_id}, ${r.proposal_id})">Record patent</button>
           </td>
         </tr>`).join("")
       : `<tr><td colspan="4" style="text-align:center;color:var(--muted)">Nothing pending disposition.</td></tr>`;
@@ -146,17 +193,41 @@
     }
   };
 
+  window.__recordPatent = async (ticketId, proposalId) => {
+    const title = prompt("Patent title:");
+    if (!title) return;
+    const applicantInput = prompt("Applicant names (comma-separated):", "") || "";
+    const filing_status = prompt("Filing status (filed/published/granted/abandoned):", "filed") || "filed";
+    const application_number = prompt("Application number (optional):", "") || null;
+    const body = {
+      proposal_id: proposalId, title, filing_status, application_number,
+      applicant_names: applicantInput.split(",").map((s) => s.trim()).filter(Boolean),
+    };
+    try {
+      await api(`/api/admin/lifecycle/${ticketId}/patent`, { method: "POST", body });
+      loadLifecycle();
+    } catch (err) {
+      showError(err.message);
+    }
+  };
+
+  function statCard(icon, value, label) {
+    return `<div class="stat"><span class="stat-icon">${icon}</span><b>${value}</b><span class="stat-label">${label}</span></div>`;
+  }
+
   async function loadTransparency() {
     const data = await api("/api/admin/transparency");
     const stats = document.getElementById("transparency-stats");
-    stats.innerHTML = `
-      <div class="stat"><b>${data.hei_participation.active_heis}</b>Active HEIs</div>
-      <div class="stat"><b>${data.industry_engagement.active_partners}</b>Active partners</div>
-      <div class="stat"><b>${data.completion_rate.pilots_passed}</b>Pilots passed</div>
-      <div class="stat"><b>${data.outcomes.handovers}</b>Handovers</div>
-      <div class="stat"><b>${data.outcomes.spinouts}</b>Spin-outs</div>
-      <div class="stat"><b>${data.outcomes.track_a_resolved}</b>Track A resolved</div>
-    `;
+    stats.innerHTML = [
+      statCard("🎓", data.hei_participation.active_heis, "Active HEIs"),
+      statCard("🏭", data.industry_engagement.active_partners, "Active partners"),
+      statCard("✅", data.completion_rate.pilots_passed, "Pilots passed"),
+      statCard("🤝", data.outcomes.handovers, "Handovers"),
+      statCard("🚀", data.outcomes.spinouts, "Spin-outs"),
+      statCard("🚧", data.outcomes.track_a_resolved, "Track A resolved"),
+      statCard("📜", data.outcomes.patents_filed, "Patents filed"),
+      statCard("🏆", data.outcomes.patents_granted, "Patents granted"),
+    ].join("");
     const body = document.getElementById("heatmap-body");
     body.innerHTML = data.district_domain_heatmap.length
       ? data.district_domain_heatmap.map((r) => `<tr><td>${escapeText(r.district)}</td><td>${escapeText(r.domain)}</td><td>${r.ticket_count}</td></tr>`).join("")

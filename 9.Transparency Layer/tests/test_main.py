@@ -49,7 +49,7 @@ def test_dashboard_does_not_require_internal_token(monkeypatch):
         "district_domain_heatmap": [], "hei_participation": {"active_heis": 0, "pending_matches": 0, "declined_matches": 0},
         "industry_engagement": {"active_partners": 0, "pending_matches": 0, "total_committed_amount": 0},
         "completion_rate": {"pilots_passed": 0, "pilots_failed": 0, "pilots_pending": 0},
-        "outcomes": {"handovers": 0, "spinouts": 0, "track_a_resolved": 0},
+        "outcomes": {"handovers": 0, "spinouts": 0, "track_a_resolved": 0, "patents_filed": 0, "patents_granted": 0},
     })
     try:
         response = TestClient(app).get("/transparency/dashboard")

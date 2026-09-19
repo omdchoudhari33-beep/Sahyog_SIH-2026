@@ -74,7 +74,9 @@ def outcome_counts(db: Session) -> dict:
             SELECT
                 (SELECT COUNT(*) FROM handover_records) AS handovers,
                 (SELECT COUNT(*) FROM spinout_records) AS spinouts,
-                (SELECT COUNT(*) FROM dispatches WHERE status = 'resolved') AS track_a_resolved
+                (SELECT COUNT(*) FROM dispatches WHERE status = 'resolved') AS track_a_resolved,
+                (SELECT COUNT(*) FROM patent_records) AS patents_filed,
+                (SELECT COUNT(*) FROM patent_records WHERE filing_status = 'granted') AS patents_granted
             """
         )
     ).mappings().one()

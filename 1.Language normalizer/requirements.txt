@@ -5,3 +5,9 @@ pydantic-settings
 python-multipart
 httpx
 pytest
+# Object storage client (MinIO / any S3-compatible endpoint) - see
+# app/media/object_storage.py.
+boto3
+# Optional media_objects registration (see app/media/storage.py) - only
+# imported at runtime if DATABASE_URL is set.
+psycopg2-binary

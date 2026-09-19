@@ -37,16 +37,17 @@
     for (const ticket of items) {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${ticket.ticket_id}</td>
+        <td>#${ticket.ticket_id}</td>
+        <td>${evidenceCell(ticket)}</td>
         <td class="stmt">${escapeHtml(ticket.problem_statement)}</td>
-        <td>${escapeHtml(ticket.domain || "-")}</td>
-        <td>${escapeHtml(String(ticket.severity ?? "-"))}</td>
-        <td>${ticket.priority_score != null ? ticket.priority_score.toFixed(2) : "-"}</td>
+        <td>${escapeHtml(formatDomain(ticket.domain))}</td>
+        <td>${severityBadge(ticket.severity)}</td>
+        <td class="priority-score">${ticket.priority_score != null ? ticket.priority_score.toFixed(2) : "-"}</td>
         <td>${ticket.cluster_count}</td>
-        <td>${escapeHtml(trackLabel(ticket.suggested_track))}</td>
+        <td>${trackBadge(ticket.suggested_track)}</td>
         <td class="actions">
-          <button class="a" data-decision="track_a" data-id="${ticket.ticket_id}">Track A</button>
-          <button class="b" data-decision="track_b" data-id="${ticket.ticket_id}">Track B</button>
+          <button class="a${ticket.suggested_track === "track_a" ? " suggested" : ""}" data-decision="track_a" data-id="${ticket.ticket_id}">${ticket.suggested_track === "track_a" ? "✓ Confirm Track A" : "Track A"}</button>
+          <button class="b${ticket.suggested_track === "track_b" ? " suggested" : ""}" data-decision="track_b" data-id="${ticket.ticket_id}">${ticket.suggested_track === "track_b" ? "✓ Confirm Track B" : "Track B"}</button>
           <button class="reject" data-decision="reject_merge" data-id="${ticket.ticket_id}">Reject/Merge</button>
         </td>
       `;
@@ -81,8 +82,38 @@
     }
   }
 
-  function trackLabel(track) {
-    return { track_a: "Track A - Govt", track_b: "Track B - University", review_required: "Needs classification" }[track] || track;
+  function evidenceCell(ticket) {
+    const parts = [];
+    if (ticket.report_photo_url) {
+      parts.push(
+        `<a href="${escapeHtml(ticket.report_photo_url)}" target="_blank" rel="noopener">` +
+          `<img class="evidence-thumb" src="${escapeHtml(ticket.report_photo_url)}" alt="report photo" /></a>`
+      );
+    }
+    if (ticket.report_audio_url) {
+      parts.push(`<a class="evidence-audio" href="${escapeHtml(ticket.report_audio_url)}" target="_blank" rel="noopener">▶ audio</a>`);
+    }
+    return parts.length ? parts.join(" ") : "<span style=\"color:var(--muted-2)\">-</span>";
+  }
+
+  function formatDomain(domain) {
+    if (!domain) return "-";
+    return String(domain)
+      .split("_")
+      .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  const SEVERITY_BADGE = { 1: "routed", 2: "review_required", 3: "geo_required", 4: "geo_required" };
+  function severityBadge(severity) {
+    if (severity == null) return "-";
+    const cls = SEVERITY_BADGE[Math.round(severity)] || "review_required";
+    return `<span class="badge ${cls}">${escapeHtml(severity)}</span>`;
+  }
+
+  function trackBadge(track) {
+    const label = { track_a: "Track A · Govt", track_b: "Track B · University", review_required: "Needs classification" }[track] || track;
+    return `<span class="badge ${escapeHtml(track)}">${escapeHtml(label)}</span>`;
   }
   function showError(message) {
     errorBox.textContent = message;

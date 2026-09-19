@@ -144,6 +144,8 @@ def process_incoming_ticket(db: Session, ticket: IncomingTicket) -> DedupResult:
         embedding=new_embedding,
         raw_evidence=ticket.raw_evidence,
         ai_suggested_track=ticket.ai_suggested_track,
+        report_photo_media_id=ticket.report_photo_media_id,
+        report_audio_media_id=ticket.report_audio_media_id,
     )
     db.add(new_ticket)
     db.commit()

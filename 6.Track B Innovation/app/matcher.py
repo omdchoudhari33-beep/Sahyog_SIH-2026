@@ -15,9 +15,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import log_audit_event
+from app.brief import load_ticket_brief, render_brief_html
 from app.config import settings
-from app.db import HeiMatch
-from app.notify import send_hei_notification
+from app.db import HeiBroadcastNotice, HeiMatch
+from app.notify import send_broadcast_brief, send_hei_notification
 
 
 def _vector_literal(vec: list[float]) -> str:
@@ -80,6 +81,76 @@ def _best_capability(db: Session, ticket: TicketForMatch, exclude_hei_ids: list[
     return dict(rows) if rows else None
 
 
+def _top_n_capabilities(db: Session, ticket: TicketForMatch, n: int) -> list[dict]:
+    """Same cosine-similarity scan as _best_capability, but returns the top
+    N active capabilities (across distinct HEIs) instead of just 1 - used
+    for the informational broadcast brief, never for the accept/decline
+    match itself. Deliberately does NOT filter out HEIs already at capacity:
+    a broadcast is "here is an opportunity you may be a good fit for", not
+    an assignment, so a currently-full HEI can still see it."""
+    rows = db.execute(
+        text(
+            """
+            SELECT DISTINCT ON (hc.hei_id)
+                   hc.id AS capability_id, hc.hei_id, hr.contact_email, hr.institution_name,
+                   1 - (hc.embedding <=> :ticket_embedding) AS similarity
+            FROM hei_capabilities hc
+            JOIN hei_registry hr ON hr.id = hc.hei_id
+            WHERE hc.active AND hr.active
+            ORDER BY hc.hei_id, similarity DESC
+            """
+        ),
+        {"ticket_embedding": _vector_literal(ticket.embedding)},
+    ).mappings().all()
+    ranked = sorted(rows, key=lambda r: r["similarity"], reverse=True)
+    return [dict(r) for r in ranked[:n]]
+
+
+def broadcast_to_top_n(db: Session, ticket_id: int, n: Optional[int] = None) -> dict:
+    """TB1 broadcast: sends the full problem brief to the top N matching HEIs
+    (by capability similarity), independent of and additional to the single
+    proposed hei_matches row create_match() maintains. Best-effort - a
+    failure here must never fail the caller's primary match creation, so
+    every exception is swallowed after logging via the returned detail."""
+    n = n or settings.BROADCAST_TOP_N
+    try:
+        ticket = load_ticket_for_match(db, ticket_id)
+        brief = load_ticket_brief(db, ticket_id)
+        if brief is None:
+            return {"ticket_id": ticket_id, "sent": 0, "detail": "ticket brief unavailable"}
+
+        candidates = _top_n_capabilities(db, ticket, n)
+        decide_url = f"{settings.STATUS_LINK_BASE_URL.rstrip('/')}/university/dashboard"
+        sent = 0
+        for rank, candidate in enumerate(candidates, start=1):
+            brief_html = render_brief_html(
+                brief, hei_name=candidate["institution_name"],
+                similarity_score=candidate["similarity"], decide_url=decide_url,
+            )
+            notice = HeiBroadcastNotice(
+                ticket_id=ticket_id, hei_id=candidate["hei_id"], capability_id=candidate["capability_id"],
+                rank=rank, similarity_score=candidate["similarity"], brief_html=brief_html,
+            )
+            db.add(notice)
+            try:
+                db.flush()
+            except IntegrityError:
+                # UNIQUE(ticket_id, hei_id) - this HEI already has a notice
+                # for this ticket (e.g. reconcile() re-ran); skip, not fatal.
+                db.rollback()
+                continue
+            send_broadcast_brief(
+                to_email=candidate["contact_email"], hei_name=candidate["institution_name"],
+                rank=rank, brief_html=brief_html, ticket_id=ticket_id,
+            )
+            sent += 1
+        db.commit()
+        return {"ticket_id": ticket_id, "sent": sent, "detail": None}
+    except Exception as exc:  # noqa: BLE001 - must never fail the caller's primary match
+        db.rollback()
+        return {"ticket_id": ticket_id, "sent": 0, "detail": str(exc)}
+
+
 def _insert_match_row(db: Session, ticket_id: int, best: dict, attempt_no: int) -> Optional[HeiMatch]:
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.MATCH_TOKEN_TTL_HOURS)
@@ -135,7 +206,99 @@ def create_match(db: Session, ticket_id: int) -> dict:
     )
     db.commit()
     log_audit_event("ticket", ticket_id, "hei_matched", actor="system", payload={"hei_id": best["hei_id"], "similarity_score": best["similarity"], "attempt_no": match.attempt_no})
+
+    # Informational fan-out to the top-N candidates (see broadcast_to_top_n's
+    # docstring) - only on the first attempt, not on every decline-reroute,
+    # since the brief was already broadcast the first time this ticket
+    # reached Track B and re-sending on each re-route would spam the same
+    # institutions repeatedly.
+    if match.attempt_no == 1:
+        broadcast_to_top_n(db, ticket_id)
+
     return {"ticket_id": ticket_id, "match": match, "created": True, "detail": None, "notify": result}
+
+
+def _best_capability_for_hei(db: Session, ticket: TicketForMatch, hei_id: int) -> Optional[dict]:
+    """Same shape as _best_capability, scoped to one specific HEI instead
+    of excluding some - used by register_interest, never by the primary
+    cascade. Still respects the active/capacity gates."""
+    row = db.execute(
+        text(
+            """
+            SELECT hc.id AS capability_id, hc.hei_id, hr.contact_email, hr.institution_name,
+                   1 - (hc.embedding <=> :ticket_embedding) AS similarity
+            FROM hei_capabilities hc
+            JOIN hei_registry hr ON hr.id = hc.hei_id
+            WHERE hc.active AND hr.active AND hc.hei_id = :hei_id
+              AND (
+                    SELECT COUNT(*) FROM hei_matches m
+                    WHERE m.hei_id = hc.hei_id AND m.status = 'accepted'
+                  ) < hr.capacity_active_projects
+            ORDER BY similarity DESC
+            LIMIT 1
+            """
+        ),
+        {"ticket_embedding": _vector_literal(ticket.embedding), "hei_id": hei_id},
+    ).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+def register_interest(db: Session, ticket_id: int, hei_id: int) -> dict:
+    """Multi-institution simultaneous collaboration: any HEI that received
+    a broadcast notice for this ticket (see broadcast_to_top_n) can
+    independently join its collaboration at any time, even after another
+    HEI already holds the primary accepted match from create_match's
+    cascade. Deliberately does NOT touch create_match/apply_decision/the
+    decline-reroute cascade - this is a separate code path that reuses the
+    same hei_matches table, guarded by schema_004_multi_institution.sql's
+    UNIQUE(ticket_id, hei_id) (a different HEI can always hold its own row
+    for the same ticket; the same HEI cannot hold two).
+
+    Unlike the cascade's 'proposed' state (an offer to decide on), a
+    self-initiated join goes straight to 'accepted' - the HEI is telling
+    us it wants in, not asking us to decide for it.
+
+    Raises LookupError if this HEI was never broadcasted this ticket (or
+    the ticket doesn't exist), ValueError if it already declined this
+    ticket or has no capacity/active capability left."""
+    existing = db.query(HeiMatch).filter(HeiMatch.ticket_id == ticket_id, HeiMatch.hei_id == hei_id).one_or_none()
+    if existing is not None:
+        if existing.status == "declined":
+            raise ValueError("this institution already declined this ticket")
+        return {"ticket_id": ticket_id, "match": existing, "created": False, "detail": "already registered"}
+
+    notice = db.query(HeiBroadcastNotice).filter(
+        HeiBroadcastNotice.ticket_id == ticket_id, HeiBroadcastNotice.hei_id == hei_id
+    ).one_or_none()
+    if notice is None:
+        raise LookupError("this institution was not notified about this ticket")
+
+    ticket = load_ticket_for_match(db, ticket_id)
+    best = _best_capability_for_hei(db, ticket, hei_id)
+    if best is None:
+        raise ValueError("this institution has no active capability or is at capacity")
+
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.MATCH_TOKEN_TTL_HOURS)
+    match = HeiMatch(
+        ticket_id=ticket_id, hei_id=hei_id, capability_id=best["capability_id"],
+        similarity_score=best["similarity"], status="accepted", attempt_no=1,
+        match_token=token, token_expires_at=expires_at, decided_at=datetime.now(timezone.utc),
+    )
+    db.add(match)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        existing = db.query(HeiMatch).filter(HeiMatch.ticket_id == ticket_id, HeiMatch.hei_id == hei_id).one_or_none()
+        return {"ticket_id": ticket_id, "match": existing, "created": False, "detail": "registered concurrently"}
+
+    db.commit()
+    log_audit_event(
+        "ticket", ticket_id, "hei_collaboration_joined", actor="hei",
+        payload={"hei_id": hei_id, "similarity_score": best["similarity"]},
+    )
+    return {"ticket_id": ticket_id, "match": match, "created": True, "detail": None}
 
 
 def resolve_match_token(db: Session, token: str) -> HeiMatch:

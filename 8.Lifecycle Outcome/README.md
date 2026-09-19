@@ -17,12 +17,18 @@ Runs on **port 8008**.
 
 ## Setup
 
-1. Same Postgres instance/DB as the other services.
+1. Same Postgres instance/DB as the other services, and the same MinIO
+   object storage the other services use (see `../DATABASE.md`).
 2. `psql "$DATABASE_URL" -f schema.sql` (additive-only, not auto-run at startup).
-3. `pip install -r requirements.txt`
-4. Copy `.env.example` to `.env`. `INTERNAL_SERVICE_TOKEN` must be the exact same
-   repo-wide value used by every other service.
-5. `uvicorn app.main:app --port 8008`
+3. `psql "$DATABASE_URL" -f schema_002_pilot_media.sql` - requires
+   `3.Triage and route/schema_003_media_objects.sql` to have been applied
+   first (adds `pilot_validations.photo_media_id`).
+4. `pip install -r requirements.txt`
+5. Copy `.env.example` to `.env`. `INTERNAL_SERVICE_TOKEN` must be the exact same
+   repo-wide value used by every other service. `S3_*` vars point pilot
+   validation photo uploads at MinIO instead of the old local
+   `pilot_uploads/` disk folder.
+6. `uvicorn app.main:app --port 8008`
 
 No demo-seed here (unlike the other services) - there's no standalone registry to
 seed; milestones only ever come from a real approved Track B proposal.

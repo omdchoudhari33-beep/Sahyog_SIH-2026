@@ -48,21 +48,28 @@ starts all four services with one combined, timestamped log file
 
 ## UI
 
-The orchestrator serves the frontend directly - no separate build/dev
-server needed:
+The citizen-facing frontend is `citizen-portal` (a separate Next.js app -
+see its own README), which talks to this service's `/conversation/*` API.
+This service itself only serves the staff-facing pages directly, no
+separate build/dev server needed for these:
 
-- `http://127.0.0.1:8005/` - citizen report wizard (voice recording or
-  typed text, photo upload, location sharing or typed place name). Every
-  system prompt is shown as text **and** spoken aloud via Bhashini TTS in
-  whichever language the citizen picked.
 - `http://127.0.0.1:8005/dashboard` - operator queue (Track A / Track B /
   Reject-Merge), proxied through the orchestrator so the browser never
   talks to Agent 3 directly.
+- `http://127.0.0.1:8005/admin` - unified Admin Portal (Track A-9).
+
+`/` itself just redirects to `/docs` (this service's API reference), same
+convention as every other service in this repo.
 
 ## Voice agent: what's actually voice-to-voice, and what isn't
 
-- **Speech-to-text**: `faster-whisper`, running fully locally (no API,
-  no cost). Auto-detects the spoken language.
+- **Speech-to-text**: Bhashini ASR (`ai4bharat/conformer-*`,
+  `ai4bharat/whisper-medium-en` for English) - this is the **only** ASR
+  engine; there is no local Whisper/faster-whisper fallback (an earlier
+  version of this service used one, hence stray references to it in old
+  comments - it was removed in favor of Bhashini-only ASR, and a language
+  Bhashini doesn't cover means audio input is simply unavailable for it,
+  not silently downgraded to a local model).
 - **Translation** (native-script source language → English, and English →
   native script for spoken replies): Bhashini's NMT pipeline
   (`ai4bharat/indictrans-v2-all-gpu--t4`).
@@ -72,29 +79,52 @@ server needed:
   `ulcaApiKey` header pair shown in Bhashini's public sample code - that
   pair scheme was tried first and rejected by the server. Found by testing
   directly against the API, not from documentation. The discovery endpoint
-  (`getModelsPipeline`) also degrades under repeated use (returns a
-  response missing `pipelineInferenceAPIEndPoint`) - `bhashini.py` calls
-  the inference endpoint directly with hardcoded, individually-verified
-  service IDs instead of discovering them per request.
-- **Language coverage - verified by testing, not assumed**: Hindi,
-  Bengali, Odia, Urdu, Nepali, Maithili, and English work (ASR via
-  faster-whisper is broader; Bhashini translation/TTS is limited to this
-  list). **Mundari, Kurukh, Kharia, and Khortha are not supported by
-  Bhashini at all** (confirmed via the discovery endpoint returning
-  "sourceLanguage is not supported") - these are outside Bhashini's
-  scope (India's 22 constitutionally scheduled languages), not a bug or
-  a missing API key. No mainstream speech AI (Whisper, Google, Azure)
-  covers them either - there's essentially no digital speech corpus for
-  them. Reports in these languages need a human-transcription path, which
-  is not yet built (see Known limitations).
+  (`getModelsPipeline`) *does* work for checking per-language,
+  per-task support (it wants the `Authorization` header, not the
+  `userID`+`ulcaApiKey` pair) - it just degraded under heavier/repeated
+  use in earlier testing, so `bhashini.py` calls the inference endpoint
+  directly with hardcoded service IDs day-to-day, verified once via the
+  discovery endpoint rather than discovered per request.
+- **Language coverage - individually verified per (language, task) via the
+  discovery endpoint, not assumed from one shared model-family label**:
+  - **Hindi, Bengali, Odia, English**: ASR + translation + TTS all work.
+  - **Urdu**: ASR + translation work; **TTS does not** - the discovery
+    endpoint authoritatively returns "No supported tasks found" for Urdu
+    TTS on this pipeline, confirmed live (a real `500` from Bhashini's own
+    server on every attempt before this was caught and disabled). Voice
+    input works fine in Urdu; spoken replies fall back to text-only.
+  - **Nepali, Maithili**: translation only - ASR and TTS both return "No
+    supported tasks found" for this pipeline. Not offered as voice
+    options in the citizen-portal UI.
+  - **Santali**: no Bhashini model of any kind (not ASR, translation, or
+    TTS) - but ASR + translation + TTS all work anyway, via a self-hosted
+    fallback (Meta's MMS for speech-to-text, NLLB-200 for translation,
+    AI4Bharat's Indic Parler-TTS for spoken replies) that
+    `1.Language normalizer/app/services/santali_local.py` routes to
+    instead of Bhashini. Those models run in `santali-voice-service/`
+    (Docker - the ML libraries wouldn't load natively on this Windows
+    install) rather than in-process. A citizen's original text/audio is
+    still preserved and routed to human review if that local service is
+    ever unreachable or fails (see `bhashini.is_language_supported()`,
+    which still correctly reports Santali as unsupported *by Bhashini*
+    for exactly that reason).
+  - **Mundari, Kurukh, Kharia, and Khortha are not supported by Bhashini
+    at all** (confirmed via the discovery endpoint returning
+    "sourceLanguage is not supported") - these are outside Bhashini's
+    scope (India's 22 constitutionally scheduled languages), not a bug or
+    a missing API key. No mainstream speech AI (Whisper, Google, Azure)
+    covers them either - there's essentially no digital speech corpus for
+    them. Reports in these languages need a human-transcription path, which
+    is not yet built (see Known limitations).
 - Speech is always a best-effort overlay: if Bhashini can't handle the
   language, or is unreachable, the text-only conversation still works -
   nothing about the pipeline depends on speech succeeding.
 
-## 0. Bring up Ollama and Postgres (Docker)
+## 0. Bring up Ollama, Postgres, and object storage (Docker)
 
-Agent 2's vision/text models and Agent 3's database aren't running yet.
-From any terminal:
+Agent 2's vision/text models, Agent 3's database, and the object storage
+(MinIO) that Agents 1/2/5/8 persist citizen audio/photos to aren't running
+yet. From any terminal:
 
 ```powershell
 # Ollama (local LLMs - all image/text processing stays in-house)
@@ -102,19 +132,31 @@ docker run -d --name ollama -p 11434:11434 -v ollama:/root/.ollama ollama/ollama
 docker exec ollama ollama pull llama3.2:3b
 docker exec ollama ollama pull llava
 
-# Postgres with PostGIS + pgvector, for Agent 3
+# Postgres with PostGIS + pgvector, and MinIO (S3-compatible object storage)
 cd "3.Triage and route"
 docker compose up -d --build
-# wait a few seconds for it to become healthy, then:
+# wait a few seconds for both to become healthy, then apply all migrations
+# in order (each is additive-only and safe to re-run):
 psql "postgresql://postgres:postgres@localhost:5432/dno_triage" -f schema.sql
+psql "postgresql://postgres:postgres@localhost:5432/dno_triage" -f schema_002_dispatch_hook.sql
+psql "postgresql://postgres:postgres@localhost:5432/dno_triage" -f schema_003_media_objects.sql
 ```
 
-Verify both are reachable before starting the agents:
+See `../DATABASE.md` for the full consolidated schema (all nine services)
+and the object storage architecture in one place.
+
+Verify all three are reachable before starting the agents:
 
 ```powershell
 curl http://localhost:11434/api/tags
 Test-NetConnection -ComputerName 127.0.0.1 -Port 5432
+curl http://localhost:9000/minio/health/live
 ```
+
+MinIO's web console is at `http://localhost:9001` (default credentials
+`sahyog` / `sahyog-dev-secret`, same as each service's `S3_ACCESS_KEY` /
+`S3_SECRET_KEY` in their `.env.example`) - useful for eyeballing uploaded
+audio/photos during a demo.
 
 If you have an NVIDIA GPU and want Ollama to use it, add `--gpus=all` to
 the `docker run` command above (requires the NVIDIA Container Toolkit).
@@ -154,7 +196,7 @@ python -m venv .venv; .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn app.main:app --port 8003
 
-# Orchestrator + UI
+# Orchestrator (backend for citizen-portal + staff pages)
 cd "4.Orchestrator"
 python -m venv .venv; .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -162,7 +204,8 @@ copy .env.example .env
 uvicorn app.main:app --port 8005
 ```
 
-Then open `http://127.0.0.1:8005/` in a browser.
+Then start `citizen-portal` (see its own README) and open it in a browser -
+or, for staff pages only, open `http://127.0.0.1:8005/dashboard` directly.
 
 ## Try the conversational flow (without the UI)
 

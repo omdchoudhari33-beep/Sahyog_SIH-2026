@@ -23,6 +23,26 @@ class CivicDomain(str, Enum):
     TRAFFIC_SIGNAGE = "TRAFFIC_SIGNAGE"
     CIVIC_DISASTER_EMERGENCY = "CIVIC_DISASTER_EMERGENCY"
     OTHER_MUNICIPAL = "OTHER_MUNICIPAL"
+    # Track B (R&D/university-routed) domains - must match
+    # "3.Triage and route/app/validation.py"'s TRACK_B_DOMAINS exactly, or a
+    # ticket that should route to Track B falls through to the D4
+    # review_required fallback instead (these two were missing entirely
+    # until this fix, so the AI could never even choose them).
+    AGRICULTURAL_DISEASE = "AGRICULTURAL_DISEASE"
+    UNKNOWN_STRUCTURAL_FAILURE = "UNKNOWN_STRUCTURAL_FAILURE"
+    # Broader societal-challenge domains (education/healthcare/agriculture/
+    # water/environment/accessibility/livelihoods/governance) - distinct
+    # from the existing municipal-infrastructure domains above, which only
+    # cover building upkeep or piped-utility issues, not access/quality/
+    # delivery/systemic problems in those same sectors.
+    HEALTHCARE_SERVICE_GAP = "HEALTHCARE_SERVICE_GAP"
+    EDUCATION_ACCESS_QUALITY = "EDUCATION_ACCESS_QUALITY"
+    AGRICULTURE_LIVELIHOOD = "AGRICULTURE_LIVELIHOOD"
+    WATER_RESOURCE_MANAGEMENT = "WATER_RESOURCE_MANAGEMENT"
+    ACCESSIBILITY_DISABILITY = "ACCESSIBILITY_DISABILITY"
+    RURAL_LIVELIHOODS = "RURAL_LIVELIHOODS"
+    ENVIRONMENT_POLLUTION = "ENVIRONMENT_POLLUTION"
+    PUBLIC_SERVICE_DELIVERY = "PUBLIC_SERVICE_DELIVERY"
 
 class ResearchDomain(str, Enum):
     # Preserved for Track B matching later in the pipeline
@@ -105,12 +125,25 @@ class Geolocation(BaseModel):
     device_model: Optional[str] = None
     is_timestamp_valid: bool = False
 
+class MediaRef(BaseModel):
+    """Object storage reference for the persisted original photo - see
+    storage.py and "3.Triage and route/schema_003_media_objects.sql".
+    media_id is None if the media_objects DB registration was skipped
+    (DATABASE_URL not configured) or failed; the file itself is still safely
+    in object storage whenever this whole object is present."""
+    media_id: Optional[int] = None
+    bucket: str
+    object_key: str
+    url: str
+
+
 class UnifiedEvidencePayload(BaseModel):
     report_id: str
     structured_evidence: StructuredEvidence
     geolocation: Geolocation
     visual_evidence: Optional[VisualEvidence] = None
     requires_human_review: bool = False
+    media: Optional[MediaRef] = None
 
 def compute_requires_human_review(
     text_result: StructuredEvidence,

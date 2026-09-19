@@ -110,6 +110,7 @@ class ClosureProof(Base):
     ticket_id = Column(BigInteger, ForeignKey("active_tickets.id"), nullable=False)
     dispatch_id = Column(BigInteger, ForeignKey("dispatches.id"), nullable=False)
     photo_url = Column(Text, nullable=False)
+    photo_media_id = Column(BigInteger, ForeignKey("media_objects.id"), nullable=True)
     photo_lat = Column(Float)
     photo_lon = Column(Float)
     exif_captured_at = Column(DateTime(timezone=True))

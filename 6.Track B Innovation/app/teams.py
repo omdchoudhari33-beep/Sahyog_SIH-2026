@@ -29,7 +29,10 @@ def form_team(db: Session, match_id: int, team_name: str, faculty_mentor_name: s
     return team
 
 
-def submit_proposal(db: Session, team_id: int, title: str, summary: str, requested_budget, timeline_weeks: Optional[int]) -> Proposal:
+def submit_proposal(
+    db: Session, team_id: int, title: str, summary: str, requested_budget, timeline_weeks: Optional[int],
+    solution_document_media_id: Optional[int] = None,
+) -> Proposal:
     team = db.query(Team).filter(Team.id == team_id).one_or_none()
     if team is None:
         raise LookupError(f"team {team_id} was not found")
@@ -38,6 +41,7 @@ def submit_proposal(db: Session, team_id: int, title: str, summary: str, request
     proposal = Proposal(
         team_id=team_id, ticket_id=match.ticket_id, title=title, summary=summary,
         requested_budget=requested_budget, timeline_weeks=timeline_weeks, status="submitted",
+        solution_document_media_id=solution_document_media_id,
     )
     db.add(proposal)
     db.commit()

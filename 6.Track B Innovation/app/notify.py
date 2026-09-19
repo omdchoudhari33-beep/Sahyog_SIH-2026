@@ -37,12 +37,10 @@ def _build_email(*, hei_name: str, ticket_problem_statement: str, similarity_sco
     return subject, text_body, html_body
 
 
-def send_hei_notification(*, to_email: str, hei_name: str, ticket_problem_statement: str, similarity_score: float | None, decide_url: str) -> dict[str, Any]:
-    subject, text_body, html_body = _build_email(
-        hei_name=hei_name, ticket_problem_statement=ticket_problem_statement,
-        similarity_score=similarity_score, decide_url=decide_url,
-    )
-
+def _send_email(*, to_email: str, subject: str, text_body: str, html_body: str) -> dict[str, Any]:
+    """Shared send path - both send_hei_notification and send_broadcast_brief
+    build their own subject/body, then hand off here for the actual
+    dry-run/SMTP branch, so that branch exists exactly once."""
     if settings.EMAIL_DRY_RUN:
         return {
             "success": True,
@@ -67,3 +65,32 @@ def send_hei_notification(*, to_email: str, hei_name: str, ticket_problem_statem
         return {"success": True, "dry_run": False, "to": to_email, "subject": subject}
     except Exception as exc:  # noqa: BLE001 - notification failure must never crash the matcher
         return {"success": False, "error": str(exc)}
+
+
+def send_broadcast_brief(*, to_email: str, hei_name: str, rank: int, brief_html: str, ticket_id: int) -> dict[str, Any]:
+    """Sent to every one of the top-N matched HEIs (see matcher.py's
+    broadcast_to_top_n), independent of send_hei_notification below which
+    only ever goes to the single, currently-proposed match."""
+    subject = f"[SAHYOG Track B] R&D opportunity brief for {hei_name} (ticket #{ticket_id})"
+    text_body = (
+        f"Your institution is one of the top {rank if rank > 1 else ''} candidate matches "
+        f"for a civic R&D opportunity (ticket #{ticket_id}).\n\n"
+        "This is an informational brief - view the full details and express interest "
+        "from your University Portal dashboard.\n\n"
+        "This is an automated message from the SAHYOG Track B Innovation pipeline."
+    )
+    html_body = f"""
+    <html><body style="font-family:sans-serif;max-width:480px;">
+      {brief_html}
+      <p style="color:#666;font-size:12px;">This is an automated message from the SAHYOG Track B Innovation pipeline.</p>
+    </body></html>
+    """
+    return _send_email(to_email=to_email, subject=subject, text_body=text_body, html_body=html_body)
+
+
+def send_hei_notification(*, to_email: str, hei_name: str, ticket_problem_statement: str, similarity_score: float | None, decide_url: str) -> dict[str, Any]:
+    subject, text_body, html_body = _build_email(
+        hei_name=hei_name, ticket_problem_statement=ticket_problem_statement,
+        similarity_score=similarity_score, decide_url=decide_url,
+    )
+    return _send_email(to_email=to_email, subject=subject, text_body=text_body, html_body=html_body)

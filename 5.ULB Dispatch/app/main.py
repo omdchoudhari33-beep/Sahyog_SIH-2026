@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.closure import verify_closure
 from app.config import settings
 from app.db import Dispatch, DispatchEvent, SessionLocal, get_db
+from app.storage import storage
 from app.dispatch import create_dispatch, reconcile as reconcile_dispatches
 from app.inbox_poller import poll_inbox
 from app.onboarding import list_ulbs, onboard_contact
@@ -300,19 +301,24 @@ async def status_update(
         raw = await photo.read()
         _validate_photo_bytes(raw)
 
-        import os
-        import uuid
-
-        os.makedirs("closure_uploads", exist_ok=True)
-        ext = ".jpg" if raw.startswith(_JPEG_MAGIC) else ".png"
-        photo_path = os.path.join("closure_uploads", f"{uuid.uuid4().hex}{ext}")
-        with open(photo_path, "wb") as fh:
-            fh.write(raw)
+        content_type = "image/jpeg" if raw.startswith(_JPEG_MAGIC) else "image/png"
+        object_key = storage.build_object_key("closure-proofs", photo.filename, default_ext=".jpg")
+        uploaded = storage.upload(
+            raw,
+            media_type="image",
+            content_type=content_type,
+            object_key=object_key,
+            original_filename=photo.filename,
+            capture_lat=photo_lat,
+            capture_lon=photo_lon,
+        )
 
         proof = verify_closure(
             db,
             dispatch_id=dispatch.id,
-            photo_path=photo_path,
+            photo_bytes=raw,
+            photo_url=uploaded.url,
+            photo_media_id=uploaded.media_id,
             photo_lat=photo_lat,
             photo_lon=photo_lon,
             exif_captured_at=None,

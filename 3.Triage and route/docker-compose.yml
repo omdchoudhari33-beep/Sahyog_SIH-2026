@@ -9,8 +9,43 @@ services:
       POSTGRES_DB: dno_triage
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d dno_triage"]
       interval: 5s
       timeout: 5s
       retries: 12
+
+  # Object storage (S3-compatible) for citizen-submitted audio and photos -
+  # every service that uploads media (1, 2, 5, 8) points its S3_* env vars
+  # at this. Buckets ("sahyog-audio", "sahyog-images") are created
+  # automatically by each service's app/object_storage.py on first use, not
+  # by this compose file. See "3.Triage and route/schema_003_media_objects.sql"
+  # for the Postgres-side registry these uploads get recorded into.
+  minio:
+    # MinIO's own Docker Hub image now requires a paid login to pull (their
+    # 2024 licensing change) - quay.io/minio/minio is MinIO's own official
+    # mirror there and stays freely pullable. Confirmed working: `docker pull
+    # minio/minio` returns "pull access denied", `docker pull
+    # quay.io/minio/minio` succeeds.
+    image: quay.io/minio/minio:latest
+    container_name: sahyog-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: sahyog
+      MINIO_ROOT_PASSWORD: sahyog-dev-secret
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres_data:
+  minio_data:

@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+python-multipart
+soundfile
+accelerate
+sentencepiece
+transformers
+IndicTransToolkit
+git+https://github.com/huggingface/parler-tts.git

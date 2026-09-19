@@ -28,7 +28,7 @@ def haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
     return 2 * EARTH_RADIUS_METERS * math.asin(math.sqrt(a))
 
 
-def _get_vision_similarity(photo_path: str, ticket_problem_statement: str) -> Optional[float]:
+def _get_vision_similarity(photo_bytes: bytes, ticket_problem_statement: str) -> Optional[float]:
     """Reuses "2.Evidence Extractor"'s C3 vision endpoint if configured.
 
     # TODO(human): confirm the exact request/response shape against that
@@ -44,13 +44,12 @@ def _get_vision_similarity(photo_path: str, ticket_problem_statement: str) -> Op
     if not settings.VISION_CLASSIFIER_URL:
         return None
     try:
-        with open(photo_path, "rb") as fh:
-            response = httpx.post(
-                settings.VISION_CLASSIFIER_URL,
-                files={"image": fh},
-                data={"normalized_english": ticket_problem_statement},
-                timeout=60.0,
-            )
+        response = httpx.post(
+            settings.VISION_CLASSIFIER_URL,
+            files={"image": ("closure.jpg", photo_bytes)},
+            data={"normalized_english": ticket_problem_statement},
+            timeout=60.0,
+        )
         response.raise_for_status()
         body = response.json()
         return float(body.get("visual_evidence", {}).get("confidence")) if body.get("visual_evidence") else None
@@ -61,7 +60,9 @@ def _get_vision_similarity(photo_path: str, ticket_problem_statement: str) -> Op
 def verify_closure(
     db: Session,
     dispatch_id: int,
-    photo_path: str,
+    photo_bytes: bytes,
+    photo_url: str,
+    photo_media_id: Optional[int],
     photo_lat: Optional[float],
     photo_lon: Optional[float],
     exif_captured_at: Optional[datetime],
@@ -86,14 +87,15 @@ def verify_closure(
         distance = haversine_meters(photo_lat, photo_lon, ticket_row["lat"], ticket_row["lon"])
         geo_check_passed = distance <= settings.CLOSURE_GEO_RADIUS_METERS
 
-    similarity_score = _get_vision_similarity(photo_path, ticket_row["standardized_problem_statement"])
+    similarity_score = _get_vision_similarity(photo_bytes, ticket_row["standardized_problem_statement"])
 
     officer_verified_contact = submitted_by == "officer"  # contact.verified_at gate is checked by the caller (main.py) before this is set True
 
     proof = ClosureProof(
         ticket_id=dispatch.ticket_id,
         dispatch_id=dispatch_id,
-        photo_url=photo_path,
+        photo_url=photo_url,
+        photo_media_id=photo_media_id,
         photo_lat=photo_lat,
         photo_lon=photo_lon,
         exif_captured_at=exif_captured_at,

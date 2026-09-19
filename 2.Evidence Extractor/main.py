@@ -1,16 +1,21 @@
+import logging
 import os
-import shutil
+import uuid
 from functools import partial
 from typing import Optional
 import anyio
 from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PIL import Image
+
+from config import settings
 
 # Import our custom models and components
 from schemas import (
     UnifiedEvidencePayload,
     Geolocation,
+    MediaRef,
     StructuredEvidence,
     VisualEvidence,
     compute_requires_human_review,
@@ -18,31 +23,91 @@ from schemas import (
 from c1_text import extract_text_evidence
 from c2_geo import resolve_geo_data
 from c3_vision import audit_vision_evidence
+from storage import storage
+
+logger = logging.getLogger("evidence_extractor")
+
+
+def _safe_temp_image_path(filename: Optional[str]) -> str:
+    """Local pre-processing staging path for an uploaded photo, named with a
+    UUID rather than the client-supplied filename verbatim. Two problems
+    with the old `f"temp_uploads/{image.filename}"`: a browser/OS filename
+    can contain path-traversal segments (`../..`) since nothing here
+    constrains it, and it can contain characters this service's own debug
+    prints then choke on - hit live as `UnicodeEncodeError: 'charmap' codec
+    can't encode characters...` crashing the whole request with a 500 on
+    Windows, where a redirected stdout defaults to cp1252, not UTF-8.
+    Object storage already gets this right (see object_storage.py's
+    `f"{prefix}/{today}/{uuid.uuid4().hex}{ext}"`) - this mirrors it for the
+    local staging copy.
+    """
+    ext = os.path.splitext(filename or "")[1]
+    if len(ext) > 10 or not ext.isascii():
+        ext = ""  # discard anything that isn't a plausible plain extension
+    return f"temp_uploads/{uuid.uuid4().hex}{ext}"
 
 
 class PhotoEvidencePayload(BaseModel):
     report_id: str
     geolocation: Geolocation
     visual_evidence: VisualEvidence
+    media: Optional[MediaRef] = None
+
+
+def _persist_original_photo(raw: bytes, filename: Optional[str], geo: Geolocation) -> Optional[MediaRef]:
+    """Uploads the ORIGINAL (pre-resize) photo bytes to object storage.
+    Previously this service processed the citizen's photo entirely in
+    memory/temp-disk and deleted it once classification finished - this is
+    the first durable copy of a citizen's submitted evidence photo anywhere
+    in the pipeline. Best-effort: a MinIO outage must not block evidence
+    extraction, which has worked fine without persistence until now."""
+    try:
+        content_type = "image/png" if (filename or "").lower().endswith(".png") else "image/jpeg"
+        object_key = storage.build_object_key("citizen-reports", filename, default_ext=".jpg")
+        uploaded = storage.upload(
+            raw,
+            media_type="image",
+            content_type=content_type,
+            object_key=object_key,
+            original_filename=filename,
+            capture_lat=geo.latitude,
+            capture_lon=geo.longitude,
+        )
+        return MediaRef(media_id=uploaded.media_id, bucket=uploaded.bucket, object_key=uploaded.object_key, url=uploaded.url)
+    except Exception:
+        logger.warning("object storage upload failed for evidence photo %s", filename, exc_info=True)
+        return None
 
 # Initialize the FastAPI server
 app = FastAPI(title="Sahyog Subgraph C - Local Backend")
+# Dev-only: lets the citizen-portal Next.js app (localhost:3000) call this
+# service straight from the browser. Restricted to localhost dev ports.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.FRONTEND_ORIGINS.split(",") if o.strip()],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Ensure a temporary directory exists for uploads
 os.makedirs("temp_uploads", exist_ok=True)
 
-def resize_image_for_ai(image_path: str, max_size: int = 512):
+def resize_image_for_ai(image_path: str, max_size: int = 448):
     """
-    Resizes the image to a max dimension (512px) for efficient vision-model input.
+    Resizes the image to a max dimension (448px) for efficient vision-model input.
     LLaVA's CLIP vision encoder operates on ~336-448px internally regardless of
     input size, so anything above that only adds base64/JSON transfer overhead
     without improving analysis quality.
+    Re-encodes as JPEG regardless of the original format: a base64-inlined PNG
+    (the common phone-screenshot/some-camera-app case) is several times larger
+    than an equivalent JPEG for a photo, which directly inflates the request
+    body Ollama has to receive and parse before inference even starts.
     Must be run AFTER C2 has already extracted the EXIF data[cite: 1].
     """
     try:
         with Image.open(image_path) as img:
             img.thumbnail((max_size, max_size))
-            img.save(image_path)
+            img.convert("RGB").save(image_path, format="JPEG", quality=85)
     except Exception as e:
         print(f"Warning: Failed to resize image: {e}")
 
@@ -58,12 +123,14 @@ async def extract_evidence(
     print(f"\n--- New Citizen Report Received: {report_id} ---")
     
     image_path = None
-    
+    image_bytes = None
+
     # 1. Save the image unmodified first (Required for C2 EXIF extraction)[cite: 1]
     if image:
-        image_path = f"temp_uploads/{image.filename}"
+        image_bytes = await image.read()
+        image_path = _safe_temp_image_path(image.filename)
         with open(image_path, "wb") as buffer:
-            shutil.copyfileobj(image.file, buffer)
+            buffer.write(image_bytes)
         print(f"Saved original image to {image_path}")
 
     # 2. Run C1 (Text) concurrently with C2 (Geo) + image resize[cite: 1]
@@ -113,7 +180,11 @@ async def extract_evidence(
     print("Computing confidence gating...")
     needs_review = compute_requires_human_review(text_result, vision_result, geo_result)
 
-    # 6. Cleanup the temporary image file[cite: 1]
+    # 6. Persist the ORIGINAL (pre-resize) photo to object storage, then
+    # clean up the temporary local copy[cite: 1]
+    media = None
+    if image_bytes is not None:
+        media = await anyio.to_thread.run_sync(_persist_original_photo, image_bytes, image.filename, geo_result)
     if image_path and os.path.exists(image_path):
         os.remove(image_path)
         print("Cleaned up temporary image file.")
@@ -124,9 +195,10 @@ async def extract_evidence(
         structured_evidence=text_result,
         geolocation=geo_result,
         visual_evidence=vision_result,
-        requires_human_review=needs_review
+        requires_human_review=needs_review,
+        media=media,
     )
-    
+
     print("--- Processing Complete ---\n")
     return payload
 
@@ -147,26 +219,32 @@ async def attach_photo(
     """
     print(f"\n--- Photo attached to report: {report_id} ---")
 
-    image_path = f"temp_uploads/{image.filename}"
+    image_bytes = await image.read()
+    image_path = _safe_temp_image_path(image.filename)
     with open(image_path, "wb") as buffer:
-        shutil.copyfileobj(image.file, buffer)
+        buffer.write(image_bytes)
     print(f"Saved original image to {image_path}")
 
     print("Running C2 Geo Extraction...")
-    geo_result = resolve_geo_data(
-        image_path=image_path,
-        device_lat=device_lat,
-        device_lon=device_lon,
-        device_timestamp=device_timestamp,
+    geo_result = await anyio.to_thread.run_sync(
+        partial(
+            resolve_geo_data,
+            image_path=image_path,
+            device_lat=device_lat,
+            device_lon=device_lon,
+            device_timestamp=device_timestamp,
+        )
     )
 
     print("Resizing image for LLaVA AI...")
-    resize_image_for_ai(image_path)
+    await anyio.to_thread.run_sync(resize_image_for_ai, image_path)
 
     print("Running C3 Vision AI...")
     vision_result = await anyio.to_thread.run_sync(
         audit_vision_evidence, image_path, normalized_english
     )
+
+    media = await anyio.to_thread.run_sync(_persist_original_photo, image_bytes, image.filename, geo_result)
 
     if os.path.exists(image_path):
         os.remove(image_path)
@@ -177,4 +255,5 @@ async def attach_photo(
         report_id=report_id,
         geolocation=geo_result,
         visual_evidence=vision_result,
+        media=media,
     )

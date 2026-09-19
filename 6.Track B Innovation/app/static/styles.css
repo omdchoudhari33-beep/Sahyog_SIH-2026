@@ -1,0 +1,595 @@
+/* =========================================================================
+   SAHYOG design system
+   One stylesheet, shared by the operator dashboard and admin portal.
+   Matches citizen-portal's (Next.js/Tailwind) "gov-blue" design system
+   exactly - same color tokens (see citizen-portal/tailwind.config.js),
+   same Noto Serif/Noto Sans fonts, same card/button shapes - so all
+   SAHYOG portals read as one product, not two different prototypes.
+   Every selector already referenced from app.js / dashboard.js / admin.js
+   is preserved - this file only changes how things look, never what JS
+   can find.
+   ========================================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=Noto+Serif:wght@600;700;800&family=Noto+Sans:wght@400;500;600;700&display=swap");
+
+:root {
+  /* Same hex values as citizen-portal's tailwind.config.js gov-blue/gov-orange scales. */
+  --bg: #eef4f9;          /* gov-blue-50 */
+  --bg-soft: #f5f9fc;     /* between gov-blue-50 and white */
+  --card: #ffffff;
+  --ink: #111827;         /* gray-900 */
+  --muted: #4b5563;       /* gray-600 */
+  --muted-2: #9ca3af;     /* gray-400 */
+  --border: #d6e6f0;      /* gov-blue-100 */
+  --border-soft: #eef4f9; /* gov-blue-50 */
+
+  --accent: #b64f17;      /* gov-orange-600 */
+  --accent-dark: #8f3d13; /* gov-orange-700 */
+  --accent-soft: rgba(217, 99, 30, 0.12); /* gov-orange DEFAULT, translucent */
+  --accent-ink: #ffffff;
+
+  --secondary: #0b3d66;   /* gov-blue-700 */
+  --secondary-soft: rgba(11, 61, 102, 0.10);
+
+  --green: #15803d;
+  --green-soft: rgba(21, 128, 61, 0.12);
+  --amber: #b45309;
+  --amber-soft: rgba(180, 83, 9, 0.14);
+  --red: #b91c1c;
+  --red-soft: rgba(185, 28, 28, 0.12);
+
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(11, 61, 102, 0.06);
+  --shadow-md: 0 10px 24px -8px rgba(11, 61, 102, 0.16);
+  --shadow-lg: 0 20px 45px -14px rgba(11, 61, 102, 0.24);
+
+  --font-heading: "Noto Serif", Georgia, "Times New Roman", serif;
+  --font-body: "Noto Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Flat navy header bar (citizen-portal's header is bg-gov-blue-700, no
+     gradient) - kept as a variable (not a flat color) so every existing
+     var(--header-gradient) usage below still resolves; the two stops are
+     close enough in tone to read as flat. */
+  --header-gradient: linear-gradient(135deg, #0b3d66 0%, #092f4f 100%);
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 { font-family: var(--font-heading); letter-spacing: -0.01em; }
+
+.wrap { max-width: 640px; margin: 0 auto; padding: 28px 16px; }
+
+/* ---------------------------------- Header / brand ---------------------------------- */
+/* Matches citizen-portal's <Header> - full-bleed navy bar with a 4px
+   orange bottom border, serif brand wordmark, contents width-capped and
+   centered independently of the bar itself. */
+
+header.top {
+  background: var(--header-gradient);
+  border-bottom: 4px solid var(--accent);
+  margin: 0 0 28px;
+  padding: 14px 16px;
+}
+header.top > * {
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+header.top .brand { display: flex; align-items: center; gap: 12px; }
+
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+}
+
+header.top h1 {
+  font-size: 21px;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.2;
+  color: #ffffff;
+}
+header.top .tag { color: rgba(255, 255, 255, 0.75); font-size: 12.5px; margin-top: 2px; }
+
+header.top nav { display: flex; gap: 8px; flex-wrap: wrap; }
+header.top nav a {
+  color: rgba(255, 255, 255, 0.9);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+header.top nav a:hover {
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+/* ---------------------------------- Hero (citizen form) ---------------------------------- */
+
+.hero {
+  background: var(--header-gradient);
+  color: #fff;
+  border-radius: var(--radius-lg);
+  padding: 22px 22px 20px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow-lg);
+  position: relative;
+  overflow: hidden;
+}
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 100% 0%, rgba(255,255,255,0.12), transparent 55%);
+}
+.hero h2 { font-size: 23px; margin: 0 0 4px; position: relative; }
+.hero p { margin: 0; opacity: 0.92; font-size: 13.5px; position: relative; }
+
+/* ---------------------------------- Stepper ---------------------------------- */
+/* Matches citizen-portal's <StepIndicator> - numbered circles connected
+   by a line, orange ring for the active step, filled blue + checkmark
+   for done steps. */
+
+.stepper {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 2px;
+}
+.step-dot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  min-width: 0;
+}
+.step-dot::before {
+  content: "";
+  position: absolute;
+  top: 13px;
+  left: -50%;
+  width: 100%;
+  height: 2px;
+  background: var(--border);
+  z-index: 0;
+}
+.step-dot:first-child::before { display: none; }
+.step-dot .circle {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 2px solid var(--border);
+  color: var(--muted-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  z-index: 1;
+  transition: all 0.25s ease;
+}
+.step-dot .label {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  max-width: 64px;
+}
+.step-dot.done::before { background: var(--secondary); }
+.step-dot.done .circle { background: var(--secondary); border-color: var(--secondary); color: #fff; }
+.step-dot.done .label { color: var(--secondary); }
+.step-dot.active .circle {
+  background: var(--card);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+.step-dot.active .label { color: var(--accent); }
+
+.step-caption {
+  text-align: center;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  margin: -8px 0 18px;
+}
+
+/* ---------------------------------- Cards ---------------------------------- */
+/* Matches citizen-portal's .gov-card exactly (bg-white, border-gov-blue-100,
+   rounded-lg) - just heavier padding/shadow since these pages are denser. */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.step {
+  animation: fadeSlideIn 0.35s ease both;
+}
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.card h3 { margin: 0 0 12px; font-size: 15.5px; color: var(--secondary); }
+.card > p:first-child { margin-top: 0; }
+
+/* ---------------------------------- Forms ---------------------------------- */
+/* Matches citizen-portal's .gov-label / .gov-input. */
+
+label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px; color: var(--secondary); }
+.hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+textarea, select, input[type="text"], input[type="number"] {
+  width: 100%;
+  padding: 10px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 15px;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+textarea:focus, select:focus, input:focus {
+  outline: none;
+  border-color: var(--secondary);
+  box-shadow: 0 0 0 3px var(--secondary-soft);
+}
+
+.field { margin-bottom: 16px; }
+.field:last-child { margin-bottom: 0; }
+
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row > * { flex: 1; min-width: 140px; }
+
+/* ---------------------------------- Buttons ---------------------------------- */
+/* Matches citizen-portal's .gov-btn-primary (solid navy) / .gov-btn-accent
+   (solid orange) / .gov-btn-secondary (outlined navy) - rounded-md, not
+   pill-shaped. */
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--secondary);
+  padding: 10px 16px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+button:hover { border-color: var(--secondary); background: var(--secondary-soft); }
+button:active { transform: scale(0.98); }
+button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+button.primary {
+  background: var(--secondary);
+  color: #fff;
+  border-color: transparent;
+  font-weight: 700;
+  width: 100%;
+  padding: 13px 16px;
+  font-size: 15.5px;
+  box-shadow: var(--shadow-sm);
+  letter-spacing: 0.01em;
+}
+button.primary:hover { color: #fff; background: var(--accent-dark); filter: none; }
+button.primary:disabled { filter: none; transform: none; }
+
+button.ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--muted);
+  width: 100%;
+}
+button.ghost:hover { background: var(--bg-soft); border-color: var(--border); color: var(--secondary); }
+
+button.mic {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  justify-content: center;
+  background: var(--secondary-soft);
+  border-color: transparent;
+  color: var(--secondary);
+  padding: 13px 16px;
+}
+button.mic:hover { color: var(--secondary); border-color: var(--secondary); background: var(--secondary-soft); }
+button.mic.recording {
+  background: var(--red-soft);
+  color: var(--red);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--red-soft); }
+  50% { box-shadow: 0 0 0 8px var(--red-soft); }
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted-2);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 16px 0;
+}
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+/* ---------------------------------- Upload zone ---------------------------------- */
+
+.upload-zone {
+  position: relative;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 22px 16px;
+  text-align: center;
+  background: var(--bg-soft);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.upload-zone:hover { border-color: var(--secondary); }
+.upload-zone .upload-icon { font-size: 28px; margin-bottom: 6px; }
+.upload-zone .upload-label { font-weight: 600; font-size: 13.5px; color: var(--secondary); }
+.upload-zone .upload-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.upload-zone input[type="file"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+
+.thumb {
+  margin-top: 12px;
+  max-width: 100%;
+  max-height: 240px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  display: none;
+  box-shadow: var(--shadow-sm);
+}
+
+audio.recorded { width: 100%; margin-top: 10px; display: none; border-radius: 999px; }
+
+.geo-status { font-size: 13px; color: var(--muted); margin-top: 8px; }
+.geo-status.ok { color: var(--green); font-weight: 600; }
+.geo-status.err { color: var(--red); font-weight: 600; }
+
+/* ---------------------------------- Badges / chips ---------------------------------- */
+
+.badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.badge.routed, .badge.track_a { background: var(--green-soft); color: var(--green); }
+.badge.review_required { background: var(--amber-soft); color: var(--amber); }
+.badge.geo_required, .badge.track_b_bad { background: var(--red-soft); color: var(--red); }
+.badge.track_b { background: var(--accent-soft); color: var(--accent-dark); }
+
+.icon-badge {
+  width: 52px; height: 52px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; margin: 0 auto 4px;
+}
+.icon-badge.success { background: var(--green-soft); }
+.icon-badge.warn { background: var(--amber-soft); }
+
+dl.evidence { margin: 10px 0 0; }
+dl.evidence div {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 9px 0; border-bottom: 1px dashed var(--border-soft); font-size: 13.5px;
+}
+dl.evidence div:last-child { border-bottom: none; }
+dl.evidence dt { color: var(--muted); }
+dl.evidence dd { margin: 0; font-weight: 600; text-align: right; }
+
+/* ---------------------------------- Misc components ---------------------------------- */
+
+.spinner {
+  display: inline-block; width: 15px; height: 15px;
+  border: 2.5px solid rgba(255,255,255,0.4);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: -2.5px;
+  margin-right: 7px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.error-box {
+  background: var(--red-soft);
+  border: 1px solid var(--red);
+  color: var(--red);
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  margin-bottom: 14px;
+  display: none;
+  font-weight: 500;
+  animation: fadeSlideIn 0.2s ease both;
+}
+
+.center { text-align: center; }
+
+/* ---------------------------------- Dashboard table ---------------------------------- */
+
+table.tickets { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.tickets th, table.tickets td {
+  text-align: left; padding: 11px 8px; border-bottom: 1px solid var(--border-soft); vertical-align: middle;
+}
+table.tickets th {
+  color: var(--muted); font-weight: 700; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  background: var(--bg-soft);
+  position: sticky; top: 0;
+}
+table.tickets tbody tr { transition: background 0.12s ease; }
+table.tickets tbody tr:hover { background: var(--bg-soft); }
+table.tickets tbody tr:last-child td { border-bottom: none; }
+
+.stmt { max-width: 260px; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.actions button { padding: 7px 12px; font-size: 12.5px; border-radius: var(--radius-sm); }
+.actions button.a { border-color: var(--green); color: var(--green); }
+.actions button.a:hover { background: var(--green-soft); }
+.actions button.b { border-color: var(--accent); color: var(--accent); }
+.actions button.b:hover { background: var(--accent-soft); }
+.actions button.reject { border-color: var(--red); color: var(--red); }
+.actions button.reject:hover { background: var(--red-soft); }
+
+/* The AI's suggested track - a one-click confirm, not a from-scratch pick.
+   Filled (not just outlined) so it visually reads as "the recommended
+   action" among the three buttons. */
+.actions button.suggested.a { background: var(--green); border-color: var(--green); color: #fff; }
+.actions button.suggested.a:hover { filter: brightness(1.08); color: #fff; }
+.actions button.suggested.b { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.actions button.suggested.b:hover { filter: brightness(1.08); color: var(--accent-ink); }
+
+.empty { text-align: center; color: var(--muted); padding: 46px 0; font-size: 14px; }
+.empty .empty-icon { font-size: 34px; display: block; margin-bottom: 10px; }
+
+.evidence-thumb {
+  width: 44px; height: 44px; object-fit: cover; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); box-shadow: var(--shadow-sm); display: block;
+  transition: transform 0.15s ease;
+}
+.evidence-thumb:hover { transform: scale(1.15); }
+.evidence-audio {
+  font-size: 12px; color: var(--secondary); text-decoration: none; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.priority-score { font-weight: 700; color: var(--accent-dark); font-family: var(--font-heading); }
+
+.toolbar { display: flex; justify-content: space-between; align-items: end; margin-bottom: 14px; gap: 10px; flex-wrap: wrap; }
+.toolbar #refresh-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+/* ---------------------------------- Conversational flow ---------------------------------- */
+
+.step { display: none; }
+.step:not([hidden]) { display: block; }
+
+#chat-log {
+  max-height: 260px; overflow-y: auto;
+  background: var(--bg-soft);
+}
+.msg {
+  max-width: 85%; padding: 9px 13px; border-radius: 14px; margin-bottom: 8px;
+  font-size: 13.5px; line-height: 1.4; box-shadow: var(--shadow-sm);
+}
+.msg.system { background: var(--card); border: 1px solid var(--border); margin-right: auto; border-bottom-left-radius: 3px; }
+.msg.user { background: var(--secondary); color: #fff; margin-left: auto; border-bottom-right-radius: 3px; text-align: right; box-shadow: none; }
+
+/* ---------------------------------- Admin portal ---------------------------------- */
+
+.tabs { display: flex; gap: 4px; margin-bottom: 0; flex-wrap: wrap; border-bottom: 2px solid var(--border); }
+.tabs button {
+  padding: 11px 18px; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border: none; background: transparent; color: var(--muted);
+  margin-bottom: -2px; border-bottom: 2px solid transparent;
+}
+.tabs button:hover { color: var(--accent); border-color: transparent; background: var(--bg-soft); }
+.tabs button.active { background: transparent; color: var(--accent); border-bottom-color: var(--accent); }
+
+.panel { display: none; padding-top: 18px; }
+.panel.active { display: block; animation: fadeSlideIn 0.25s ease both; }
+
+.stat-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+.stat {
+  background: var(--bg-soft); border: 1px solid var(--border-soft); border-radius: var(--radius);
+  padding: 14px 18px; min-width: 130px; flex: 1;
+}
+.stat .stat-icon { font-size: 18px; margin-bottom: 6px; display: block; }
+.stat b { display: block; font-size: 24px; font-family: var(--font-heading); color: var(--secondary); }
+.stat span.stat-label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+
+table.admin { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-bottom: 12px; }
+table.admin th, table.admin td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+table.admin th { color: var(--muted); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+table.admin input { width: 90px; padding: 6px 8px; font-size: 12.5px; margin-right: 4px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+table.admin td button { padding: 6px 11px; font-size: 12px; border-radius: var(--radius-sm); margin-right: 4px; }
+
+/* ---------------------------------- Utility / footer ---------------------------------- */
+/* Matches citizen-portal's <Footer> - white bg, top border, muted links. */
+
+footer.note {
+  text-align: center; color: var(--muted-2); font-size: 12px; margin-top: 22px;
+  padding: 20px 16px 28px;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+
+/* ---------------------------------- Modal dialogs ---------------------------------- */
+/* Native <dialog> - no JS framework, just .showModal()/.close(). Styled to
+   match .card exactly so a popup form reads as part of the same design
+   system, not a bare browser default. */
+
+dialog {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow-lg);
+  max-width: 480px;
+  width: calc(100vw - 32px);
+}
+dialog::backdrop {
+  background: rgba(11, 61, 102, 0.45);
+}
+dialog .field:last-of-type { margin-bottom: 10px; }
+
+/* ---------------------------------- Responsive ---------------------------------- */
+
+@media (max-width: 640px) {
+  .wrap { padding: 20px 12px; }
+  .step-dot .label { display: none; }
+  table.tickets, table.admin { font-size: 12.5px; }
+  .toolbar { align-items: stretch; }
+}

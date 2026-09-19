@@ -32,7 +32,8 @@ def test_verify_closure_geo_check_passes_and_auto_resolves_for_verified_officer(
 
     with patch("app.closure._get_vision_similarity", return_value=None):
         proof = verify_closure(
-            db, dispatch_id=1, photo_path="/tmp/fake.jpg",
+            db, dispatch_id=1, photo_bytes=b"fake",
+            photo_url="http://localhost:9000/sahyog-images/fake.jpg", photo_media_id=None,
             photo_lat=23.3001, photo_lon=85.3001,  # a few meters away
             exif_captured_at=None, submitted_by="officer",
         )
@@ -48,7 +49,8 @@ def test_verify_closure_geo_check_fails_and_flags_disputed():
 
     with patch("app.closure._get_vision_similarity", return_value=None):
         proof = verify_closure(
-            db, dispatch_id=1, photo_path="/tmp/fake.jpg",
+            db, dispatch_id=1, photo_bytes=b"fake",
+            photo_url="http://localhost:9000/sahyog-images/fake.jpg", photo_media_id=None,
             photo_lat=25.0, photo_lon=90.0,  # far away
             exif_captured_at=None, submitted_by="officer",
         )
@@ -64,7 +66,8 @@ def test_verify_closure_citizen_submission_never_auto_resolves():
 
     with patch("app.closure._get_vision_similarity", return_value=None):
         proof = verify_closure(
-            db, dispatch_id=1, photo_path="/tmp/fake.jpg",
+            db, dispatch_id=1, photo_bytes=b"fake",
+            photo_url="http://localhost:9000/sahyog-images/fake.jpg", photo_media_id=None,
             photo_lat=23.3001, photo_lon=85.3001,
             exif_captured_at=None, submitted_by="citizen",
         )
@@ -79,7 +82,8 @@ def test_verify_closure_always_inserts_a_proof_row_regardless_of_outcome():
 
     with patch("app.closure._get_vision_similarity", return_value=None):
         verify_closure(
-            db, dispatch_id=1, photo_path="/tmp/fake.jpg",
+            db, dispatch_id=1, photo_bytes=b"fake",
+            photo_url="http://localhost:9000/sahyog-images/fake.jpg", photo_media_id=None,
             photo_lat=25.0, photo_lon=90.0,
             exif_captured_at=None, submitted_by="citizen",
         )

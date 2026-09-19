@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 import uuid
 from pathlib import Path
@@ -19,10 +20,12 @@ from app.media.pipeline import (
     UnsupportedAsrLanguageError,
     transcribe_with_cleanup,
 )
+from app.media.storage import storage
 from app.services import bhashini
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class _Stage:
@@ -57,7 +60,29 @@ async def speak(payload: SpeakRequest):
     rather than an error - callers must fall back to text-only silently.
     """
     target_language = bhashini.resolve_language_code(payload.language) or "en"
+    original_text = payload.text
     text = payload.text
+
+    if target_language == "sat":
+        # Bhashini has no Santali model at all - use the self-hosted
+        # translate+TTS fallback instead (see app/services/santali_local.py).
+        # Same "fall back to English rather than staying silent" contract
+        # as the Bhashini path below on any failure.
+        from app.services import santali_local
+
+        try:
+            with _Stage("speak: santali local translate"):
+                santali_text = await anyio.to_thread.run_sync(
+                    santali_local.translate_english_to_santali, text
+                )
+            with _Stage("speak: santali local tts"):
+                audio_bytes = await anyio.to_thread.run_sync(
+                    santali_local.synthesize_speech_via_local_model, santali_text
+                )
+            return Response(content=audio_bytes, media_type="audio/wav")
+        except santali_local.SantaliLocalError:
+            logger.warning("Santali local speak failed, falling back to English TTS", exc_info=True)
+            target_language = "en"
 
     if target_language != "en":
         with _Stage("speak: bhashini translate"):
@@ -70,6 +95,26 @@ async def speak(payload: SpeakRequest):
             # Couldn't translate into this language - speaking English is
             # still more useful than staying silent.
             target_language = "en"
+
+    if target_language == "ur":
+        # Bhashini's TTS genuinely isn't provisioned for Urdu (confirmed
+        # via its discovery endpoint - see bhashini.py's TTS_SERVICE_IDS
+        # comment), but the same self-hosted Indic Parler-TTS model
+        # already running for Santali lists Urdu as a supported language
+        # too - try that before giving up to English. `text` here is
+        # already the Bhashini-translated Urdu text from above.
+        from app.services import santali_local
+
+        try:
+            with _Stage("speak: urdu local tts"):
+                audio_bytes = await anyio.to_thread.run_sync(
+                    santali_local.synthesize_speech_via_local_model, text
+                )
+            return Response(content=audio_bytes, media_type="audio/wav")
+        except santali_local.SantaliLocalError:
+            logger.warning("Urdu local TTS fallback failed, falling back to English TTS", exc_info=True)
+            target_language = "en"
+            text = original_text
 
     with _Stage("speak: bhashini tts"):
         audio_bytes = await anyio.to_thread.run_sync(
@@ -87,15 +132,44 @@ async def upload_audio(file: UploadFile = File(...)):
     Internal-only endpoint (localhost, no auth) so a caller that only has
     audio bytes - a browser recording, an orchestrator relaying an upload -
     can hand them off and get back a local_audio_path usable with /webhook.
+
+    Also persists the recording durably to object storage (see
+    app/media/storage.py). The local_audio_dir copy is a working file for
+    ffmpeg/faster-whisper, not the system of record - previously it was the
+    ONLY copy, and got silently lost the moment tmp cleanup ran, meaning a
+    citizen's or officer's only durable record of the original audio never
+    existed at all.
     """
     upload_dir = Path(settings.local_audio_dir)
     upload_dir.mkdir(parents=True, exist_ok=True)
 
+    raw = await file.read()
     suffix = Path(file.filename or "audio").suffix or ".webm"
     destination = upload_dir / f"{uuid.uuid4().hex}{suffix}"
-    destination.write_bytes(await file.read())
+    destination.write_bytes(raw)
 
-    return {"local_audio_path": str(destination.resolve())}
+    media_id = None
+    media_url = None
+    try:
+        uploaded = storage.upload(
+            raw,
+            media_type="audio",
+            content_type=file.content_type or "application/octet-stream",
+            object_key=storage.build_object_key("citizen-reports", file.filename, default_ext=suffix),
+            original_filename=file.filename,
+        )
+        media_id, media_url = uploaded.media_id, uploaded.url
+    except Exception:
+        # Object storage is a durability upgrade, not a hard requirement of
+        # this endpoint's existing contract (local_audio_path) - a MinIO
+        # outage must never block a citizen from filing a report.
+        logger.warning("object storage upload failed for %s", destination, exc_info=True)
+
+    return {
+        "local_audio_path": str(destination.resolve()),
+        "media_id": media_id,
+        "media_url": media_url,
+    }
 
 
 @router.post("/webhook", response_model=AgentResult)
@@ -139,6 +213,34 @@ async def receive_message(
         scrubbed,
         payload.source_language,
     )
+
+    # A language with no translation model anywhere (Bhashini OR the local
+    # Santali fallback below) must never silently fall through
+    # translate_to_english()'s safe-fallback-on-transient-failure path,
+    # which would return the ORIGINAL untranslated script mislabeled as
+    # "english_translation" - the citizen's actual words are preserved
+    # here either way, just honestly flagged for a human to read/translate
+    # instead of guessed at by an LLM that almost certainly can't read
+    # this script. Santali ("sat") is NOT unsupported any more - Bhashini
+    # itself has no model for it, but app/services/santali_local.py does
+    # (see translate_to_english(), called unconditionally below), so it
+    # must fall through to the real translation attempt instead of being
+    # caught by this Bhashini-only check.
+    if (
+        bhashini.resolve_language_code(payload.source_language) != "sat"
+        and not bhashini.is_language_supported(payload.source_language)
+    ):
+        return AgentResult(
+            request_id=payload.request_id,
+            status="review_required",
+            input_type=payload.input_type,
+            source_language=payload.source_language,
+            standardized_text=standardized,
+            english_translation=None,
+            pii_scrubbed=True,
+            review_status="required",
+        )
+
     # Blocking network call (Bhashini) - run off the event loop so it
     # can't stall other requests (health checks, concurrent submissions).
     translated = await anyio.to_thread.run_sync(

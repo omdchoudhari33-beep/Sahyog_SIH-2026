@@ -4,6 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "sahyog-orchestrator"
 
+    # Comma-separated list of origins allowed to call this service from a
+    # browser (CORS). Defaults to the local citizen-portal dev server.
+    frontend_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
     agent1_base_url: str = "http://127.0.0.1:8001"
     agent2_base_url: str = "http://127.0.0.1:8002"
     agent3_base_url: str = "http://127.0.0.1:8003"
@@ -30,7 +34,13 @@ class Settings(BaseSettings):
 
     # Agent 2's vision call alone can take minutes on a cold-loaded local
     # model (Ollama unloads idle models after ~5 min by default).
-    request_timeout_seconds: float = 240.0
+    # Santali audio goes through Agent1's self-hosted ASR then translation
+    # (see "1.Language normalizer/app/services/santali_local.py"), each
+    # itself allowed up to 300s under load - sequentially that can exceed
+    # this client's old 240s cap even while Agent1 is still genuinely
+    # working, not stuck, so this must stay comfortably above that
+    # worst-case chain rather than below it.
+    request_timeout_seconds: float = 600.0
 
     # S2 doesn't estimate how many people are affected yet; use a neutral
     # default until that signal exists.

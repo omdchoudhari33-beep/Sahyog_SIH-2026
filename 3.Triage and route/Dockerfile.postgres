@@ -3,3 +3,25 @@ FROM pgvector/pgvector:pg16
 RUN apt-get update \
     && apt-get install -y --no-install-recommends postgresql-16-postgis-3 \
     && rm -rf /var/lib/apt/lists/*
+
+# Auto-provisions the full schema on first container start - Postgres runs
+# every *.sql under /docker-entrypoint-initdb.d in alphabetical order, and
+# only when the data directory is empty. Numbered to respect real FK
+# dependencies: this service's own three files must run in this exact
+# order (schema_003's own header comment already documents that), and they
+# come first because every other service's schema.sql FKs into
+# active_tickets. Build context for this Dockerfile is the repo root (see
+# docker-compose.yml) so it can reach every service's schema file.
+COPY ["3.Triage and route/schema.sql", "/docker-entrypoint-initdb.d/01_triage_schema.sql"]
+COPY ["3.Triage and route/schema_002_dispatch_hook.sql", "/docker-entrypoint-initdb.d/02_triage_dispatch_hook.sql"]
+COPY ["3.Triage and route/schema_003_media_objects.sql", "/docker-entrypoint-initdb.d/03_triage_media_objects.sql"]
+# 5.ULB Dispatch's dispatches/closure_proofs FK into active_tickets (01) and
+# media_objects (03) - must come after both, but before nothing else needs it.
+COPY ["5.ULB Dispatch/schema.sql", "/docker-entrypoint-initdb.d/04_ulb_dispatch_schema.sql"]
+COPY ["6.Track B Innovation/schema.sql", "/docker-entrypoint-initdb.d/05_trackb_schema.sql"]
+COPY ["6.Track B Innovation/schema_002_university_portal.sql", "/docker-entrypoint-initdb.d/06_trackb_university_portal.sql"]
+COPY ["7.Industry Partnership/schema.sql", "/docker-entrypoint-initdb.d/07_industry_schema.sql"]
+COPY ["8.Lifecycle Outcome/schema.sql", "/docker-entrypoint-initdb.d/08_lifecycle_schema.sql"]
+COPY ["8.Lifecycle Outcome/schema_002_pilot_media.sql", "/docker-entrypoint-initdb.d/09_lifecycle_pilot_media.sql"]
+COPY ["9.Transparency Layer/schema.sql", "/docker-entrypoint-initdb.d/10_transparency_schema.sql"]
+COPY ["6.Track B Innovation/schema_003_hei_broadcast.sql", "/docker-entrypoint-initdb.d/11_trackb_broadcast.sql"]

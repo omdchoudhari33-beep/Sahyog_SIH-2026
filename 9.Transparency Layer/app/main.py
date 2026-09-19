@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from typing import Optional
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.audit import log_event
+from app.audit import list_audit_events, log_event
 from app.citizen_status import get_unified_status
 from app.config import settings
 from app.dashboard import full_dashboard
@@ -16,6 +19,15 @@ from app.schemas import AuditLogEntry, AuditLogOut
 logger = logging.getLogger("transparency_layer")
 
 app = FastAPI(title="Sahyog Transparency Layer", version="0.1.0")
+# Lets the citizen-portal Next.js app call this service's public endpoints
+# (X1/X2/X3) straight from the browser. Origins come from FRONTEND_ORIGINS
+# (comma-separated, defaults to the local dev server).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.FRONTEND_ORIGINS.split(",") if o.strip()],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/", include_in_schema=False)
@@ -40,6 +52,23 @@ def audit_log_ingest(entry: AuditLogEntry, db: Session = Depends(get_db)):
     an honesty guarantee, not a cryptographic one (TODO(human) in README)."""
     saved = log_event(db, entry.service_name, entry.entity_type, entry.entity_id, entry.event, entry.actor, entry.payload)
     return AuditLogOut.model_validate(saved)
+
+
+@app.get("/audit")
+def audit_log_list(
+    entity_type: Optional[str] = None,
+    entity_id: Optional[int] = None,
+    service_name: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """Public read side of the audit log - a citizen-facing government
+    transparency page, same trust level as the dashboard/status endpoints
+    below, not an internal-only route like the ingestion one above."""
+    return list_audit_events(db, entity_type, entity_id, service_name, from_date, to_date, limit, offset)
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +116,8 @@ def transparency_dashboard(db: Session = Depends(get_db)):
       <div class="stat">Handovers: <b>{stats['outcomes']['handovers']}</b></div>
       <div class="stat">Spin-outs: <b>{stats['outcomes']['spinouts']}</b></div>
       <div class="stat">Track A resolved: <b>{stats['outcomes']['track_a_resolved']}</b></div>
+      <div class="stat">Patents filed: <b>{stats['outcomes']['patents_filed']}</b></div>
+      <div class="stat">Patents granted: <b>{stats['outcomes']['patents_granted']}</b></div>
 
       <h3>District x Domain Heatmap</h3>
       <table><tr><th>District</th><th>Domain</th><th>Ticket count</th></tr>{heatmap_rows}</table>

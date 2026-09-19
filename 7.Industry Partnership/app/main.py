@@ -92,18 +92,17 @@ def partnership_entry(proposal_id: int, db: Session = Depends(get_db)):
     )
 
 
-@app.get("/partnership/{proposal_id}", response_model=PartnershipMatchOut, dependencies=[Depends(require_internal_token)])
-def get_partnership_match(proposal_id: int, db: Session = Depends(get_db)):
-    match = db.query(PartnershipMatch).filter(PartnershipMatch.proposal_id == proposal_id).order_by(PartnershipMatch.created_at.desc()).first()
-    if match is None:
-        raise HTTPException(status_code=404, detail=f"no match found for proposal {proposal_id}")
-    return PartnershipMatchOut.model_validate(match)
-
-
 # ---------------------------------------------------------------------------
 # Admin Portal proxy targets (4.Orchestrator calls these server-side - see
 # 6.Track B Innovation/app/main.py's equivalent section for the full
 # rationale on internal-auth vs HTTPBasic here).
+#
+# Registered BEFORE GET /partnership/{proposal_id} - Starlette matches
+# routes in registration order, and {proposal_id} would otherwise greedily
+# match the literal path segment "ledgers" first (as a to-be-rejected int)
+# and shadow this route entirely - same class of bug as 5.ULB Dispatch's
+# /dispatch/reconcile vs /dispatch/{ticket_id} lesson, caught live this
+# time by an actual Admin Portal click producing a 422 int-parsing error.
 # ---------------------------------------------------------------------------
 
 @app.get("/partnership/ledgers", response_model=list[LedgerOut], dependencies=[Depends(require_internal_token)])
@@ -124,6 +123,14 @@ def release_ledger_funds_json(ledger_id: int, body: FundReleaseRequest, db: Sess
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"release_id": release.id, "amount_released": str(release.amount_released)}
+
+
+@app.get("/partnership/{proposal_id}", response_model=PartnershipMatchOut, dependencies=[Depends(require_internal_token)])
+def get_partnership_match(proposal_id: int, db: Session = Depends(get_db)):
+    match = db.query(PartnershipMatch).filter(PartnershipMatch.proposal_id == proposal_id).order_by(PartnershipMatch.created_at.desc()).first()
+    if match is None:
+        raise HTTPException(status_code=404, detail=f"no match found for proposal {proposal_id}")
+    return PartnershipMatchOut.model_validate(match)
 
 
 # ---------------------------------------------------------------------------

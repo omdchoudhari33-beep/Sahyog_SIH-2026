@@ -1,6 +1,17 @@
 from unittest.mock import MagicMock
 
-from app.dashboard import full_dashboard, industry_engagement
+from app.dashboard import full_dashboard, industry_engagement, outcome_counts
+
+
+def test_outcome_counts_includes_patents():
+    db = MagicMock()
+    db.execute.return_value.mappings.return_value.one.return_value = {
+        "handovers": 3, "spinouts": 1, "track_a_resolved": 5,
+        "patents_filed": 2, "patents_granted": 1,
+    }
+    result = outcome_counts(db)
+    assert result["patents_filed"] == 2
+    assert result["patents_granted"] == 1
 
 
 def test_industry_engagement_uses_independent_subqueries_not_a_cross_join():

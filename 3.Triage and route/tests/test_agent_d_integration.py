@@ -16,6 +16,18 @@ def test_classification_routes_configured_domains():
     assert classify_ticket(None, None) == "review_required"
 
 
+def test_classification_routes_broader_societal_domains():
+    assert classify_ticket("ACCESSIBILITY_DISABILITY", "high") == "track_a"
+    assert classify_ticket("AGRICULTURE_LIVELIHOOD", "low") == "track_b"
+    assert classify_ticket("WATER_RESOURCE_MANAGEMENT", "low") == "track_b"
+    assert classify_ticket("RURAL_LIVELIHOODS", "low") == "track_b"
+    assert classify_ticket("ENVIRONMENT_POLLUTION", "high") == "track_b"
+    # Deliberately ambiguous - left out of both sets, falls through to a
+    # human instead of guessing.
+    assert classify_ticket("HEALTHCARE_SERVICE_GAP", "high") == "review_required"
+    assert classify_ticket("PUBLIC_SERVICE_DELIVERY", "high") == "review_required"
+
+
 def test_priority_score_uses_configured_weights():
     original = (
         settings.PRIORITY_SEVERITY_WEIGHT,

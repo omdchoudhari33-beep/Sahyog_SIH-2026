@@ -5,6 +5,7 @@ auto-inferred from a pilot pass - see main.py's /admin/{ticket_id}/disposition.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.audit import log_audit_event
 from app.config import settings
-from app.db import HandoverRecord, RdOutcomeFeedback, SpinoutRecord
+from app.db import HandoverRecord, PatentRecord, RdOutcomeFeedback, SpinoutRecord
 
 
 def record_handover(db: Session, ticket_id: int, notes: Optional[str]) -> HandoverRecord:
@@ -47,6 +48,31 @@ def record_spinout(db: Session, proposal_id: int, startup_name: str, incubator_n
     db.add(record)
     db.commit()
     db.refresh(record)
+    return record
+
+
+def record_patent(
+    db: Session, ticket_id: int, proposal_id: int, title: str,
+    applicant_names: list[str], filing_status: str,
+    application_number: Optional[str], notes: Optional[str],
+) -> PatentRecord:
+    """Independent of apply_disposition()/handover/spinout - a patent can
+    be filed regardless of what else happens to the ticket, so it's its
+    own action, not a third disposition value."""
+    if filing_status not in ("filed", "published", "granted", "abandoned"):
+        raise ValueError("filing_status must be one of: filed, published, granted, abandoned")
+
+    record = PatentRecord(
+        ticket_id=ticket_id, proposal_id=proposal_id, title=title,
+        applicant_names=applicant_names, filing_status=filing_status,
+        application_number=application_number, notes=notes,
+        filed_at=datetime.now(timezone.utc) if filing_status in ("filed", "published", "granted") else None,
+        granted_at=datetime.now(timezone.utc) if filing_status == "granted" else None,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    log_audit_event("ticket", ticket_id, "patent_recorded", payload={"proposal_id": proposal_id, "title": title, "filing_status": filing_status})
     return record
 
 

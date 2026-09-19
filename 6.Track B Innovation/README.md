@@ -83,11 +83,43 @@ flagged in the response detail for human ops review - `# TODO(human)`: once
 `9.Transparency Layer`'s audit log is wired into this service, route that flag there
 instead of only into the HTTP response.
 
+## Broadcast problem briefs (top-N, informational)
+
+Alongside the single active `hei_matches` proposal above, `create_match()`
+also calls `matcher.py::broadcast_to_top_n()` (first attempt only, not on
+every decline-reroute) which sends a full problem brief - ticket, domain,
+severity, location, report photo - to the top `BROADCAST_TOP_N` (default 10)
+matching HEI capabilities by cosine similarity, stored in
+`hei_broadcast_notices` (`schema_003_hei_broadcast.sql`, apply the same way
+as the other migrations). This is purely informational: it does not create
+additional `hei_matches` rows and does not change who can accept/decline -
+see `app/brief.py` for the shared brief template and `GET
+/trackb/{ticket_id}/broadcast` for reading it back (consumed by the
+Admin Portal and by 9.Transparency Layer's citizen status page).
+
+## Real Jharkhand HEI data
+
+`app/seed_jharkhand_heis.py` seeds ~17 real Jharkhand institutions (BIT
+Mesra, IIT-ISM Dhanbad, NIT Jamshedpur, Birsa Agricultural University,
+Central University of Jharkhand, and others) covering the domains
+`3.Triage and route` actually routes to Track B on
+(`AGRICULTURAL_DISEASE`, `UNKNOWN_STRUCTURAL_FAILURE`,
+`ILLEGAL_CONSTRUCTION_ENCROACHMENT`). Run manually, once:
+```bash
+python -m app.seed_jharkhand_heis
+```
+Idempotent (matches on institution name, skips ones already present).
+**Contact emails are placeholders** (`trackb-onboarding@<slug>.example-pending.ac.in`)
+- I have no way to verify real registrar inboxes - replace them with
+verified contacts (`UPDATE hei_registry SET contact_email = ... WHERE
+institution_name = ...`) before ever setting `EMAIL_DRY_RUN=false`.
+
 ## Endpoints
 
 **Internal only** (`X-Internal-Token` header, `401` if missing/wrong; must never be
 reachable from the public internet in deployment):
-- `POST /trackb/reconcile`, `POST /trackb/{ticket_id}`, `GET /trackb/{ticket_id}`
+- `POST /trackb/reconcile`, `POST /trackb/{ticket_id}`, `GET /trackb/{ticket_id}`,
+  `GET /trackb/{ticket_id}/broadcast`
 
 **Public** (token/password is the credential):
 - `GET /hei/{token}` / `POST /hei/{token}/decide` / `POST /hei/{token}/team` /

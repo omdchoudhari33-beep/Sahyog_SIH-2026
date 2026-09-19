@@ -17,22 +17,28 @@ citizen report -> 1.Language normalizer -> 2.Evidence Extractor
 
 1. Same Postgres instance as `3.Triage and route` (PostGIS already enabled
    there). This service owns its own tables in that same database — it does
-   **not** create or require a separate database.
-2. Apply the base schema (if not already applied) and this service's
-   migration, in order, from `3.Triage and route/`:
+   **not** create or require a separate database. Also uses the same MinIO
+   object storage instance (see `../DATABASE.md`) for closure photos.
+2. Apply the base schema (if not already applied), from `3.Triage and
+   route/`, then this service's own `schema.sql` (needs `active_tickets`
+   from the first migration and `media_objects` from the third):
    ```bash
+   psql "$DATABASE_URL" -f "../3.Triage and route/schema.sql"
+   psql "$DATABASE_URL" -f "../3.Triage and route/schema_002_dispatch_hook.sql"
+   psql "$DATABASE_URL" -f "../3.Triage and route/schema_003_media_objects.sql"
    psql "$DATABASE_URL" -f schema.sql
-   psql "$DATABASE_URL" -f schema_002_dispatch_hook.sql
    ```
-   Like `schema.sql`, this migration is **not** auto-applied by either
-   service at startup — run it manually once. It is additive-only
-   (`CREATE TABLE/INDEX IF NOT EXISTS`) and safe to re-run.
+   These migrations are **not** auto-applied by any service at startup —
+   run them manually once. They are additive-only (`CREATE TABLE/INDEX IF
+   NOT EXISTS`) and safe to re-run.
 3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 4. Copy `.env.example` to `.env` and fill in `INTERNAL_SERVICE_TOKEN` and
    `ADMIN_FORM_PASSWORD` at minimum (see "Manual cross-service setup" below).
+   `S3_*` vars point closure photo uploads at MinIO instead of the old
+   local `closure_uploads/` disk folder.
 5. Run the service:
    ```bash
    uvicorn app.main:app --port 8004

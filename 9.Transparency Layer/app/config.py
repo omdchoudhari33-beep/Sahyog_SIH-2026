@@ -14,6 +14,15 @@ class Settings:
 
     INTERNAL_SERVICE_TOKEN: str = os.getenv("INTERNAL_SERVICE_TOKEN", "")
 
+    # Same object storage endpoint every other service uses to turn a
+    # media_objects (bucket, object_key) pair into a fetchable URL - see
+    # "3.Triage and route/app/config.py"'s identical setting.
+    S3_PUBLIC_BASE_URL: str = os.getenv("S3_PUBLIC_BASE_URL", "http://localhost:9000")
+
+    # Comma-separated list of origins allowed to call this service from a
+    # browser (CORS). Defaults to the local citizen-portal dev server.
+    FRONTEND_ORIGINS: str = os.getenv("FRONTEND_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true" or "pytest" in sys.modules
 
 

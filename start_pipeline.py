@@ -10,6 +10,7 @@ Ctrl+C stops every service cleanly.
 """
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 import sys
@@ -17,6 +18,19 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
+
+# Windows defaults a redirected/piped stdout to the system's ANSI codepage
+# (cp1252 here), not UTF-8 - fine for plain ASCII debug prints, but this
+# pipeline's whole point is multilingual text (Hindi/Bengali/Odia/Santali
+# Ol Chiki...), and any service that prints one of those strings (or, as hit
+# live, a non-ASCII character in a citizen-uploaded filename) crashes that
+# request with UnicodeEncodeError - see "2.Evidence Extractor/main.py"'s
+# `print(f"Saved original image to {image_path}")`. PYTHONUTF8=1 forces each
+# child's own stdout/stderr to real UTF-8 (PEP 540); reconfiguring this
+# script's own stdout covers the `print(stamped)` below, which re-emits
+# that same child output and would otherwise hit the identical crash one
+# level up.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parent
 LOG_DIR = ROOT / "logs"
@@ -161,6 +175,9 @@ def main() -> int:
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            encoding="utf-8",
+            errors="replace",
+            env={**os.environ, "PYTHONUTF8": "1"},
         )
         processes.append((svc["name"], proc))
         t = threading.Thread(target=stream_output, args=(svc["name"], proc.stdout, log_handle), daemon=True)
@@ -173,7 +190,7 @@ def main() -> int:
         return 1
 
     print(f"\nAll services launching. Centralized log: {LOG_FILE}")
-    print("UI:         http://127.0.0.1:8005/")
+    print("Citizen UI: run citizen-portal separately (see its own README)")
     print("Dashboard:  http://127.0.0.1:8005/dashboard")
     print("Press Ctrl+C to stop everything.\n")
 
